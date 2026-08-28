@@ -61,104 +61,73 @@ Chrome DevTools Protocol 插件 for [DeepSeek Harness](../deepseek-harness)(DSH)
 
 ## 安装到 DSH
 
-插件是**本地 link 安装**(未发布到 registry)。分四步:构建插件 → 链入 harness → 挂 host 行 → 建 preset。
+插件通过 **`dsh plugin`(profile 机制)** 从 GitHub 安装,分三步:安装插件包 → 安装 agent preset → 重启。无需 clone 本仓库,无需改 harness 源码。
 
 ### 0. 前置
 
-- DSH checkout 在 `/home/chensg/code/deepseek-harness/`(路径不同则全文替换)
-- 本仓库在 `/home/chensg/code/dsh-chrome-cdp/`
-- Node ≥ 20
+- 任意方式安装的 `dsh` CLI(npm 全局或源码 checkout 运行均可)
+- Node ≥ 20,pnpm(`dsh plugin` 底层转发给 pnpm)
+- `dsh` 在 PATH 时命令写作 `dsh ...`;从源码 checkout 运行时写作 `pnpm --dir /path/to/deepseek-harness dsh ...`
 
-### 1. 构建插件
-
-```bash
-cd /home/chensg/code/dsh-chrome-cdp
-npm install
-npm run build        # 产出 lib/index.js、lib/tools.mjs、client/client.js
-```
-
-### 2. 链入 harness(pnpm link 依赖)
-
-preset 树的 fiber 从 **harness 的 baseUrl** 解析包名,所以插件必须能从 harness 侧 resolve。在 harness 的 `apps/cli/package.json` 加 link 依赖:
+### 1. 安装插件包(host 半边 + 面板 + bundle 层)
 
 ```bash
-cd /home/chensg/code/deepseek-harness
-# 编辑 apps/cli/package.json,dependencies 里加:
-#   "dsh-chrome-cdp": "link:/home/chensg/code/dsh-chrome-cdp"
-pnpm install --filter @deepseek-ai/dsh
+dsh plugin --profile web add github:xiaobai2017666/dsh-chrome-cdp#<commit-sha>
 ```
 
-验证:
+pnpm 在 `~/.dsh/profiles/web/` 里装 git 依赖并执行 `prepare`(即 `npm run build`)产出 `lib/`、`client/`;`dsh plugin` 检测到包声明 `dsh.bundle`,自动把 `dsh-chrome-cdp` 追加进 `dsh.profile.bundles`。下次启动时 bundle patch 自动插入 host 行(`chrome-cdp`),面板经 `dsh.client` 声明自动挂进 Web GUI——**不需要手写任何 profile patch**。
+
+> **pnpm ≥10 首次会拦截 prepare**:add 报错时,把 pnpm 打印的那个 key(格式 `dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>`)原样抄进 `~/.dsh/profiles/web/pnpm-workspace.yaml`:
+>
+> ```yaml
+> allowBuilds:
+>   dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>: true
+> ```
+>
+> 然后重跑 add。这条白名单的含义是"允许该包在你机器上执行安装时代码"——**建议 pin commit sha**(#后接完整 commit),这样授权的是一份不可变内容,且换 sha 时白名单 key 会变,能避免分支前进导致的静默变更。
+
+`#<commit-sha>` 也可以是 tag(如 `#v0.1.1`)或分支名(如 `#main`)。分支名迭代最省事,但每次 `update` 分支前进后 sha 变化,需要按新报错补一条新的 allowBuilds key;sha/tag 则一劳永逸。
+
+验证(不启动):
 
 ```bash
-node -e "const {createRequire}=require('node:module');\
-const r=createRequire('/home/chensg/code/deepseek-harness/apps/cli/package.json');\
-console.log(r.resolve('dsh-chrome-cdp/tools'), r.resolve('dsh-chrome-cdp/bridge'))"
+dsh --profile web --dump-config | grep -B2 -A3 'chrome-cdp'
+# 应看到 "# == dsh-chrome-cdp" 层与 id: chrome-cdp 的 host 行
 ```
 
-两个路径都应输出 `/home/chensg/code/dsh-chrome-cdp/...`。
+### 2. 安装 agent preset(工具可见性)
 
-> **必须重启 dsh web。** host 进程在启动时固化模块解析视图;install/link 之后不重启,preset 挂载会报 `Package subpath './bridge' is not defined by "exports"`,GUI 表现为选了 preset 又弹回默认。
-
-### 3. 挂 host 行(profile patch)
-
-编辑 `~/.dsh/profiles/web/cordis.patch.yml`,追加:
-
-```yaml
-- insert:
-    - id: chrome-cdp
-      name: 'dsh-chrome-cdp'
-```
-
-host 行负责连接服务、`/cdp` RPC 通道和设置持久化。改这一文件会热重载(~6-8s),无需重启。
-
-### 4. 建 agent preset(工具可见性)
-
-Web 会话只有经 agent preset 才能看到工具。preset 无 include/继承机制,正确做法是 **copy API 复制 standard 再追加组**:
+Web 会话只有经 agent preset 才能看到工具;preset 不走 profile/bundle 机制,装到用户 preset root(`~/.dsh/.agent-presets/`)。本仓库已固化模板,两条 curl 即可:
 
 ```bash
-# 4a. 复制 standard
-curl -s -X POST http://127.0.0.1:3080/api/agentPreset.copy \
-  -H 'content-type: application/json' \
-  -d '{"type":"client-request","rpcId":"c1","method":"agentPreset.copy",
-       "payload":{"from":"standard","agentPreset":"chrome-cdp-tools-v2","name":"Chrome CDP 工具"}}'
+mkdir -p ~/.dsh/.agent-presets/chrome-cdp-tools
+curl -fo ~/.dsh/.agent-presets/chrome-cdp-tools/agent.cordis.yml \
+  https://raw.githubusercontent.com/xiaobai2017666/dsh-chrome-cdp/main/presets/chrome-cdp-tools/agent.cordis.yml
+curl -fo ~/.dsh/.agent-presets/chrome-cdp-tools/preset.yml \
+  https://raw.githubusercontent.com/xiaobai2017666/dsh-chrome-cdp/main/presets/chrome-cdp-tools/preset.yml
 ```
 
-```bash
-# 4b. 在 ~/.dsh/.agent-presets/chrome-cdp-tools-v2/agent.cordis.yml 尾部追加:
-- id: chrome-cdp-group          # ⚠️ 组 id 绝不能与子 entry id 同名,见"排查"
-  name: 'cordis:group'
-  group: true
-  isolate:
-    chromeCdpTools: true
-  config:
-    - id: chrome-cdp-tools
-      name: 'dsh-chrome-cdp/tools'
-      config:
-        groups:                  # 任一 false 即整组不注册
-          navigation: true
-          diagnostics: true
-          debug: true
-          interaction: true
-          raw: true
-```
+preset YAML 每次发现都重读,**即时生效、无需重启**。(本地有仓库 clone 时用 `cp` 代替 curl 同样可以。)
 
-```bash
-# 4c. preset 元数据 ~/.dsh/.agent-presets/chrome-cdp-tools-v2/preset.yml:
-name: Chrome CDP 工具
-description: 标准编码 Agent + 11 个 chrome_* 浏览器工具
-order: 20
-```
+> preset 里所有 `@deepseek-ai/*` 包都从 harness 安装侧解析(`~/.dsh/profiles/node_modules` fallback),无需用户安装它们。
 
-preset YAML 改动**即时生效**(每次发现都重读)。
+### 3. 重启并使用
 
-### 5. 重启并使用
-
-```bash
-# 重启你的 dsh web(步骤 2 之后这是必须的)
-```
+**必须重启 dsh web**——host 进程在启动时固化模块解析视图,install 后不重启,preset 挂载会报 `Package subpath './bridge' is not defined by "exports"`,GUI 表现为选了 preset 又弹回默认。
 
 新建会话 → preset 选「Chrome CDP 工具」→ 对模型说"列出浏览器目标"。
+
+### 更新与卸载
+
+```bash
+dsh plugin --profile web update dsh-chrome-cdp   # 更新(分支 ref 前进后需重跑)
+dsh plugin --profile web remove dsh-chrome-cdp   # 卸载:连依赖和 bundle 层一起摘
+rm -rf ~/.dsh/.agent-presets/chrome-cdp-tools    # 卸载:摘 preset
+```
+
+### 源码开发(维护者)
+
+源码开发循环(改 `src/` → `npm run build` → 热重载)仍走本地 link:在 harness 的 `apps/cli/package.json` 加 `"dsh-chrome-cdp": "link:/path/to/dsh-chrome-cdp"` 后 `pnpm install --filter @deepseek-ai/dsh`。这条路径只为开发便利,正式安装请用上面的 `dsh plugin` 流程。
 
 ---
 
@@ -273,7 +242,8 @@ src/tools/            工具半边
   index.ts            preset 入口(defineTool 注册)
 src/client/           Web 面板(React,CSS Modules)
 bridge.mjs            包根单例(两产物共享,勿打包)
-cordis.patch.yml      host 行插入声明
+cordis.patch.yml      host 行插入声明(bundle patch)
+presets/chrome-cdp-tools/  agent preset 模板(装到 ~/.dsh/.agent-presets/)
 scripts/              探针与诊断脚本
 DESIGN.tools.md       工具层设计文档
 ```

@@ -1,0 +1,3 @@
+name: Chrome CDP 工具
+description: 标准编码 Agent + 11 个 chrome_* 浏览器工具(导航/求值/控制台/网络/断点调试/截图/点击/输入/CDP 直通)。
+order: 20
