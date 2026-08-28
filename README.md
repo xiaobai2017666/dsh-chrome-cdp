@@ -69,24 +69,32 @@ Chrome DevTools Protocol 插件 for [DeepSeek Harness](../deepseek-harness)(DSH)
 - Node ≥ 20,pnpm(`dsh plugin` 底层转发给 pnpm)
 - `dsh` 在 PATH 时命令写作 `dsh ...`;从源码 checkout 运行时写作 `pnpm --dir /path/to/deepseek-harness dsh ...`
 
-### 1. 安装插件包(host 半边 + 面板 + bundle 层)
+### 1. 安装插件包(host 半边 + 面板 + bundle 层)——生产环境主要手段
 
 ```bash
-dsh plugin --profile web add github:xiaobai2017666/dsh-chrome-cdp#<commit-sha>
+dsh plugin --profile web add github:xiaobai2017666/dsh-chrome-cdp
 ```
 
-pnpm 在 `~/.dsh/profiles/web/` 里装 git 依赖并执行 `prepare`(即 `npm run build`)产出 `lib/`、`client/`;`dsh plugin` 检测到包声明 `dsh.bundle`,自动把 `dsh-chrome-cdp` 追加进 `dsh.profile.bundles`。下次启动时 bundle patch 自动插入 host 行(`chrome-cdp`),面板经 `dsh.client` 声明自动挂进 Web GUI——**不需要手写任何 profile patch**。
+这是**生产环境安装的主要手段**:不写 `#` ref 时 pnpm 跟踪仓库默认分支(本仓库为 `master`)的最新提交。pnpm 在 `~/.dsh/profiles/web/` 里装 git 依赖并执行 `prepare`(即 `npm run build`)产出 `lib/`、`client/`;`dsh plugin` 检测到包声明 `dsh.bundle`,自动把 `dsh-chrome-cdp` 追加进 `dsh.profile.bundles`。下次启动时 bundle patch 自动插入 host 行(`chrome-cdp`),面板经 `dsh.client` 声明自动挂进 Web GUI——**不需要手写任何 profile patch**。
 
-> **pnpm ≥10 首次会拦截 prepare**:add 报错时,把 pnpm 打印的那个 key(格式 `dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>`)原样抄进 `~/.dsh/profiles/web/pnpm-workspace.yaml`:
->
-> ```yaml
-> allowBuilds:
->   dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>: true
-> ```
->
-> 然后重跑 add。这条白名单的含义是"允许该包在你机器上执行安装时代码"——**建议 pin commit sha**(#后接完整 commit),这样授权的是一份不可变内容,且换 sha 时白名单 key 会变,能避免分支前进导致的静默变更。
+**首次安装的 allowBuilds 一次性步骤**:pnpm ≥10 会拦截 git 依赖的 `prepare`,add 报错并打印一个 key(解析默认分支后形如 `dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>`),把它原样抄进 `~/.dsh/profiles/web/pnpm-workspace.yaml`:
 
-`#<commit-sha>` 也可以是 tag(如 `#v0.1.1`)或分支名(如 `#main`)。分支名迭代最省事,但每次 `update` 分支前进后 sha 变化,需要按新报错补一条新的 allowBuilds key;sha/tag 则一劳永逸。
+```yaml
+allowBuilds:
+  dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>: true
+```
+
+然后重跑 add。这条白名单的含义是"允许该包在你机器上执行安装时代码",只应给信任的仓库开。注意 pnpm 打印的 key 可能是 `git+ssh://` 形式而非 codeload 形式,**以报错原文为准**。
+
+**默认分支前进后更新**(无 pin 跟踪分支的唯一维护动作):
+
+```bash
+dsh plugin --profile web update dsh-chrome-cdp
+```
+
+`update` 重新解析默认分支,lockfile 从旧 commit 跳到新 commit。若新 commit 的 sha 不在 allowBuilds 里,prepare 会再次被拦——按新报错把新 key 补进 allowBuilds,重跑 update。即:**每次跨 commit 更新,白名单 key 轮换一次**。
+
+> 需要可复现/受控升级时,可以退回 pin 形式 `#<commit-sha>` 或 `#v0.1.1`(tag):spec 与白名单 key 都固定不变,更新变得完全受控;代价是失去"update 即跟进分支"的便利。两种形态随时可用 add 互换,lockfile 会随 add 重写。
 
 验证(不启动):
 
@@ -120,7 +128,7 @@ preset YAML 每次发现都重读,**即时生效、无需重启**。(本地有�
 ### 更新与卸载
 
 ```bash
-dsh plugin --profile web update dsh-chrome-cdp   # 更新(分支 ref 前进后需重跑)
+dsh plugin --profile web update dsh-chrome-cdp   # 跟进默认分支最新 commit(白名单 key 轮换见步骤 1)
 dsh plugin --profile web remove dsh-chrome-cdp   # 卸载:连依赖和 bundle 层一起摘
 rm -rf ~/.dsh/.agent-presets/chrome-cdp-tools    # 卸载:摘 preset
 ```
