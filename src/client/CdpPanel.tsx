@@ -316,9 +316,11 @@ export function CdpPanel({
                     disabled={busy !== undefined || status.phase === 'disconnected'}
                     onClick={() => { void runAction('disconnect', onDisconnect) }}
                   >{t('action.disconnect')}</button>
+                </div>
+                <div className={css.ensureGroup}>
                   <button
                     type="button"
-                    className={css.secondary}
+                    className={css.primary}
                     disabled={busy !== undefined || status.phase === 'connected'}
                     title={t('action.ensureHint')}
                     onClick={() => {
@@ -329,15 +331,15 @@ export function CdpPanel({
                       void runAction('ensure', () => onEnsureChrome(closeRunning ? { closeRunning: true } : undefined))
                     }}
                   >{t('action.ensure')}</button>
+                  <label className={css.ensureClose} title={t('action.ensureHint')}>
+                    <input
+                      type="checkbox"
+                      checked={closeRunning}
+                      onChange={(event) => { setCloseRunning(event.target.checked) }}
+                    />
+                    <span>{t('action.ensureCloseLabel')}</span>
+                  </label>
                 </div>
-                <label className={css.ensureClose} title={t('action.ensureHint')}>
-                  <input
-                    type="checkbox"
-                    checked={closeRunning}
-                    onChange={(event) => { setCloseRunning(event.target.checked) }}
-                  />
-                  <span>{t('action.ensureCloseLabel')}</span>
-                </label>
                 {actionError !== undefined && (
                   <p className={css.error} role="alert">{t('action.error', { message: actionError })}</p>
                 )}

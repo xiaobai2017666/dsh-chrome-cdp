@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
 		let react_jsx_runtime = require("react/jsx-runtime");
 		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
 		//#region \0dsh-css:/home/chensg/code/dsh-chrome-cdp/src/client/CdpPanel.module.css.mjs
-		const css = ".iCytDq_layer{flex:none;align-items:center;width:100%;height:42px;margin:8px 0 0;display:flex;position:relative}.iCytDq_footerButtons{align-items:center;width:100%;display:flex}.iCytDq_badge{width:calc(100% + 4px);height:42px;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;margin:0 -2px;padding:0 10px 0 8px;font-family:inherit;font-size:14px;display:inline-flex;overflow:hidden}.iCytDq_badge:hover,.iCytDq_badge[data-active]{background:var(--dsw-alias-interactive-bg-hover)}.iCytDq_badgeLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.iCytDq_badgeCount{color:var(--dsw-alias-label-tertiary);flex:none;margin-left:auto;font-size:12px;line-height:16px}.iCytDq_layer.iCytDq_rail{width:36px;height:36px;margin:0}.iCytDq_rail .iCytDq_badge{justify-content:center;gap:0;width:36px;height:36px;margin:0;padding:0}.iCytDq_triggerDot{flex:none;justify-content:center;align-items:center;display:inline-flex}.iCytDq_panel{z-index:30;border:1px solid var(--dsw-alias-border-inverted);background:var(--dsw-specific-menu);width:420px;max-width:calc(100vw - 24px);max-height:60vh;box-shadow:var(--dsw-shadow-lv3);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:12px;flex-direction:column;display:flex;position:fixed;overflow:hidden}.iCytDq_header{box-sizing:border-box;flex:none;justify-content:space-between;align-items:center;gap:8px;min-height:44px;padding:10px 12px;display:flex}.iCytDq_title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:20px}.iCytDq_statusChip{background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;align-items:center;gap:6px;padding:2px 8px;font-size:12px;line-height:18px;display:inline-flex}.iCytDq_statusChip[data-phase=connected]{color:var(--dsw-alias-state-success)}.iCytDq_statusChip[data-phase=error]{color:var(--dsw-alias-state-error-primary)}.iCytDq_statusChip[data-phase=connecting]{color:var(--dsw-alias-label-secondary)}.iCytDq_body{flex-direction:column;flex:1;gap:10px;min-height:0;padding:0 12px 12px;display:flex;overflow-y:auto}.iCytDq_note{color:var(--dsw-alias-label-tertiary);margin:4px 0;font-size:12px;line-height:18px}.iCytDq_error{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-inverted);overflow-wrap:anywhere;border-radius:8px;margin:0;padding:6px 8px;font-size:12px;line-height:18px}.iCytDq_facts{grid-template-columns:1fr 1fr;gap:4px 12px;margin:0;display:grid}.iCytDq_facts>div{align-items:baseline;gap:6px;min-width:0;display:flex}.iCytDq_facts dt{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px}.iCytDq_facts dd{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-primary);margin:0;font-size:12px;overflow:hidden}.iCytDq_targets{border-top:1px solid var(--dsw-alias-border-l2);padding-top:8px}.iCytDq_targetsHead{justify-content:space-between;align-items:center;display:flex}.iCytDq_targetsHead h3{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;font-weight:500}.iCytDq_targets ul{flex-direction:column;gap:4px;margin:6px 0 0;padding:0;list-style:none;display:flex}.iCytDq_target{align-items:center;gap:8px;min-width:0;display:flex}.iCytDq_targetType{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);border-radius:6px;flex:none;padding:0 6px;font-size:11px;line-height:18px}.iCytDq_targetTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden}.iCytDq_linkButton{color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px}.iCytDq_linkButton:hover:not(:disabled){color:var(--dsw-alias-label-primary)}.iCytDq_linkButton:disabled{opacity:.5;cursor:default}.iCytDq_form{border-top:1px solid var(--dsw-alias-border-l2);flex-direction:column;gap:8px;padding-top:10px;display:flex}.iCytDq_formTitle{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;font-weight:500}.iCytDq_field{align-items:center;gap:8px;display:flex}.iCytDq_field span{width:96px;color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px}.iCytDq_field input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);min-width:0;height:28px;color:var(--dsw-alias-label-primary);border-radius:8px;flex:1;padding:0 8px;font-family:inherit;font-size:12px}.iCytDq_field input:focus-visible{border-color:var(--dsw-alias-state-focus);outline:none}.iCytDq_check{color:var(--dsw-alias-label-secondary);cursor:pointer;align-items:center;gap:8px;font-size:12px;display:flex}.iCytDq_formActions{justify-content:flex-end;display:flex}.iCytDq_fieldError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.iCytDq_actions{gap:8px;display:flex}.iCytDq_ensureClose{color:var(--dsw-alias-label-tertiary);cursor:pointer;align-items:center;gap:8px;font-size:12px;display:flex}.iCytDq_primary,.iCytDq_secondary{cursor:pointer;border-radius:8px;flex:1;height:30px;font-family:inherit;font-size:12px}.iCytDq_primary{background:var(--dsw-alias-state-focus);color:var(--dsw-alias-label-inverted);border:none}.iCytDq_primary:disabled{opacity:.5;cursor:default}.iCytDq_secondary{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.iCytDq_secondary:disabled{opacity:.5;cursor:default}.iCytDq_primary:hover:not(:disabled),.iCytDq_secondary:hover:not(:disabled){filter:brightness(1.1)}.iCytDq_overlay{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary);border-radius:999px;align-items:center;gap:6px;padding:4px 10px;font-size:12px;line-height:16px;display:inline-flex;position:relative}.iCytDq_overlayLabel{white-space:nowrap}";
+		const css = ".iCytDq_layer{flex:none;align-items:center;width:100%;height:42px;margin:8px 0 0;display:flex;position:relative}.iCytDq_footerButtons{align-items:center;width:100%;display:flex}.iCytDq_badge{width:calc(100% + 4px);height:42px;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;margin:0 -2px;padding:0 10px 0 8px;font-family:inherit;font-size:14px;display:inline-flex;overflow:hidden}.iCytDq_badge:hover,.iCytDq_badge[data-active]{background:var(--dsw-alias-interactive-bg-hover)}.iCytDq_badgeLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.iCytDq_badgeCount{color:var(--dsw-alias-label-tertiary);flex:none;margin-left:auto;font-size:12px;line-height:16px}.iCytDq_layer.iCytDq_rail{width:36px;height:36px;margin:0}.iCytDq_rail .iCytDq_badge{justify-content:center;gap:0;width:36px;height:36px;margin:0;padding:0}.iCytDq_triggerDot{flex:none;justify-content:center;align-items:center;display:inline-flex}.iCytDq_panel{z-index:30;border:1px solid var(--dsw-alias-border-inverted);background:var(--dsw-specific-menu);width:420px;max-width:calc(100vw - 24px);max-height:60vh;box-shadow:var(--dsw-shadow-lv3);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:12px;flex-direction:column;display:flex;position:fixed;overflow:hidden}.iCytDq_header{box-sizing:border-box;flex:none;justify-content:space-between;align-items:center;gap:8px;min-height:44px;padding:10px 12px;display:flex}.iCytDq_title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:20px}.iCytDq_statusChip{background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;align-items:center;gap:6px;padding:2px 8px;font-size:12px;line-height:18px;display:inline-flex}.iCytDq_statusChip[data-phase=connected]{color:var(--dsw-alias-state-success)}.iCytDq_statusChip[data-phase=error]{color:var(--dsw-alias-state-error-primary)}.iCytDq_statusChip[data-phase=connecting]{color:var(--dsw-alias-label-secondary)}.iCytDq_body{flex-direction:column;flex:1;gap:10px;min-height:0;padding:0 12px 12px;display:flex;overflow-y:auto}.iCytDq_note{color:var(--dsw-alias-label-tertiary);margin:4px 0;font-size:12px;line-height:18px}.iCytDq_error{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-inverted);overflow-wrap:anywhere;border-radius:8px;margin:0;padding:6px 8px;font-size:12px;line-height:18px}.iCytDq_facts{grid-template-columns:1fr 1fr;gap:4px 12px;margin:0;display:grid}.iCytDq_facts>div{align-items:baseline;gap:6px;min-width:0;display:flex}.iCytDq_facts dt{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px}.iCytDq_facts dd{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-primary);margin:0;font-size:12px;overflow:hidden}.iCytDq_targets{border-top:1px solid var(--dsw-alias-border-l2);padding-top:8px}.iCytDq_targetsHead{justify-content:space-between;align-items:center;display:flex}.iCytDq_targetsHead h3{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;font-weight:500}.iCytDq_targets ul{flex-direction:column;gap:4px;margin:6px 0 0;padding:0;list-style:none;display:flex}.iCytDq_target{align-items:center;gap:8px;min-width:0;display:flex}.iCytDq_targetType{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);border-radius:6px;flex:none;padding:0 6px;font-size:11px;line-height:18px}.iCytDq_targetTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden}.iCytDq_linkButton{color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px}.iCytDq_linkButton:hover:not(:disabled){color:var(--dsw-alias-label-primary)}.iCytDq_linkButton:disabled{opacity:.5;cursor:default}.iCytDq_form{border-top:1px solid var(--dsw-alias-border-l2);flex-direction:column;gap:8px;padding-top:10px;display:flex}.iCytDq_formTitle{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;font-weight:500}.iCytDq_field{align-items:center;gap:8px;display:flex}.iCytDq_field span{width:96px;color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px}.iCytDq_field input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);min-width:0;height:28px;color:var(--dsw-alias-label-primary);border-radius:8px;flex:1;padding:0 8px;font-family:inherit;font-size:12px}.iCytDq_field input:focus-visible{border-color:var(--dsw-alias-state-focus);outline:none}.iCytDq_check{color:var(--dsw-alias-label-secondary);cursor:pointer;align-items:center;gap:8px;font-size:12px;display:flex}.iCytDq_formActions{justify-content:flex-end;display:flex}.iCytDq_fieldError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.iCytDq_actions{gap:8px;display:flex}.iCytDq_ensureGroup{border-top:1px solid var(--dsw-alias-border-l2);flex-direction:column;gap:8px;padding-top:10px;display:flex}.iCytDq_ensureGroup .iCytDq_primary{flex:none;width:100%}.iCytDq_ensureClose{color:var(--dsw-alias-label-tertiary);cursor:pointer;align-items:center;gap:8px;font-size:12px;display:flex}.iCytDq_primary,.iCytDq_secondary{cursor:pointer;border-radius:8px;flex:1;height:30px;font-family:inherit;font-size:12px}.iCytDq_primary{background:var(--dsw-alias-state-focus);color:var(--dsw-alias-label-inverted);border:none}.iCytDq_primary:disabled{opacity:.5;cursor:default}.iCytDq_secondary{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.iCytDq_secondary:disabled{opacity:.5;cursor:default}.iCytDq_primary:hover:not(:disabled),.iCytDq_secondary:hover:not(:disabled){filter:brightness(1.1)}.iCytDq_overlay{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary);border-radius:999px;align-items:center;gap:6px;padding:4px 10px;font-size:12px;line-height:16px;display:inline-flex;position:relative}.iCytDq_overlayLabel{white-space:nowrap}";
 		const tagId = "dsh-chrome-cdp/CdpPanel.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -19,39 +19,40 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var CdpPanel_module_css_default = {
-			"field": "iCytDq_field",
 			"rail": "iCytDq_rail",
-			"overlay": "iCytDq_overlay",
-			"panel": "iCytDq_panel",
-			"layer": "iCytDq_layer",
-			"targets": "iCytDq_targets",
+			"secondary": "iCytDq_secondary",
 			"header": "iCytDq_header",
-			"targetsHead": "iCytDq_targetsHead",
 			"linkButton": "iCytDq_linkButton",
+			"formTitle": "iCytDq_formTitle",
 			"check": "iCytDq_check",
-			"ensureClose": "iCytDq_ensureClose",
-			"body": "iCytDq_body",
 			"form": "iCytDq_form",
-			"statusChip": "iCytDq_statusChip",
-			"triggerDot": "iCytDq_triggerDot",
 			"primary": "iCytDq_primary",
 			"actions": "iCytDq_actions",
-			"targetType": "iCytDq_targetType",
-			"overlayLabel": "iCytDq_overlayLabel",
-			"fieldError": "iCytDq_fieldError",
-			"formActions": "iCytDq_formActions",
-			"secondary": "iCytDq_secondary",
-			"badgeLabel": "iCytDq_badgeLabel",
-			"title": "iCytDq_title",
-			"facts": "iCytDq_facts",
-			"error": "iCytDq_error",
-			"note": "iCytDq_note",
-			"targetTitle": "iCytDq_targetTitle",
-			"target": "iCytDq_target",
-			"footerButtons": "iCytDq_footerButtons",
-			"formTitle": "iCytDq_formTitle",
 			"badge": "iCytDq_badge",
-			"badgeCount": "iCytDq_badgeCount"
+			"targets": "iCytDq_targets",
+			"footerButtons": "iCytDq_footerButtons",
+			"badgeLabel": "iCytDq_badgeLabel",
+			"body": "iCytDq_body",
+			"layer": "iCytDq_layer",
+			"triggerDot": "iCytDq_triggerDot",
+			"statusChip": "iCytDq_statusChip",
+			"overlay": "iCytDq_overlay",
+			"panel": "iCytDq_panel",
+			"target": "iCytDq_target",
+			"formActions": "iCytDq_formActions",
+			"ensureClose": "iCytDq_ensureClose",
+			"targetsHead": "iCytDq_targetsHead",
+			"facts": "iCytDq_facts",
+			"note": "iCytDq_note",
+			"error": "iCytDq_error",
+			"targetType": "iCytDq_targetType",
+			"targetTitle": "iCytDq_targetTitle",
+			"field": "iCytDq_field",
+			"ensureGroup": "iCytDq_ensureGroup",
+			"overlayLabel": "iCytDq_overlayLabel",
+			"badgeCount": "iCytDq_badgeCount",
+			"fieldError": "iCytDq_fieldError",
+			"title": "iCytDq_title"
 		};
 		//#endregion
 		//#region src/client/CdpPanel.tsx
@@ -326,56 +327,55 @@ window.__ModuleLoader__.load({
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: CdpPanel_module_css_default.actions,
-									children: [
-										status.phase === "connected" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: CdpPanel_module_css_default.primary,
-											disabled: busy !== void 0,
-											onClick: () => {
-												runAction("reconnect", onReconnect);
-											},
-											children: t("action.reconnect")
-										}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: CdpPanel_module_css_default.primary,
-											disabled: busy !== void 0 || status.phase === "connecting",
-											onClick: () => {
-												runAction("connect", onConnect);
-											},
-											children: t("action.connect")
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: CdpPanel_module_css_default.secondary,
-											disabled: busy !== void 0 || status.phase === "disconnected",
-											onClick: () => {
-												runAction("disconnect", onDisconnect);
-											},
-											children: t("action.disconnect")
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: CdpPanel_module_css_default.secondary,
-											disabled: busy !== void 0 || status.phase === "connected",
-											title: t("action.ensureHint"),
-											onClick: () => {
-												if (closeRunning && !window.confirm(t("action.ensureConfirm"))) return;
-												runAction("ensure", () => onEnsureChrome(closeRunning ? { closeRunning: true } : void 0));
-											},
-											children: t("action.ensure")
-										})
-									]
+									children: [status.phase === "connected" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: CdpPanel_module_css_default.primary,
+										disabled: busy !== void 0,
+										onClick: () => {
+											runAction("reconnect", onReconnect);
+										},
+										children: t("action.reconnect")
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: CdpPanel_module_css_default.primary,
+										disabled: busy !== void 0 || status.phase === "connecting",
+										onClick: () => {
+											runAction("connect", onConnect);
+										},
+										children: t("action.connect")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: CdpPanel_module_css_default.secondary,
+										disabled: busy !== void 0 || status.phase === "disconnected",
+										onClick: () => {
+											runAction("disconnect", onDisconnect);
+										},
+										children: t("action.disconnect")
+									})]
 								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-									className: CdpPanel_module_css_default.ensureClose,
-									title: t("action.ensureHint"),
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										type: "checkbox",
-										checked: closeRunning,
-										onChange: (event) => {
-											setCloseRunning(event.target.checked);
-										}
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("action.ensureCloseLabel") })]
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: CdpPanel_module_css_default.ensureGroup,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: CdpPanel_module_css_default.primary,
+										disabled: busy !== void 0 || status.phase === "connected",
+										title: t("action.ensureHint"),
+										onClick: () => {
+											if (closeRunning && !window.confirm(t("action.ensureConfirm"))) return;
+											runAction("ensure", () => onEnsureChrome(closeRunning ? { closeRunning: true } : void 0));
+										},
+										children: t("action.ensure")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+										className: CdpPanel_module_css_default.ensureClose,
+										title: t("action.ensureHint"),
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											type: "checkbox",
+											checked: closeRunning,
+											onChange: (event) => {
+												setCloseRunning(event.target.checked);
+											}
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("action.ensureCloseLabel") })]
+									})]
 								}),
 								actionError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 									className: CdpPanel_module_css_default.error,
