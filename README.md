@@ -170,7 +170,7 @@ DSH Web GUI 侧栏的 Chrome CDP 面板:
 - **参数编辑**:host / port / autoReconnect / reconnectDelaySeconds;保存后 live 参数变化会自动重连
 - **操作**:Connect / Disconnect / Reconnect / **Ensure Chrome(检测并启动)**;socket 意外掉线按配置自动重试
 
-**Ensure Chrome 按钮**(未连接时可用):探测当前 host:port 是否已有可 CDP 连接的 Chrome——已通则不动浏览器;否则检测运行中的 Chrome 实例(WSL 下检测 Windows 侧 chrome.exe),**关闭它并以 `--remote-debugging-port` + 隔离 user-data-dir 重启**(点击时有确认弹窗,未保存的页面状态会丢失),等端点就绪后自动连接。这是"用户自己开了 Chrome 但没带调试参数"场景的一键救星。
+**Ensure Chrome 按钮**(未连接时可用):探测当前 host:port 是否已有可 CDP 连接的 Chrome——已通则不动浏览器;否则**直接另起一个**带 `--remote-debugging-port` 的独立实例(隔离 user-data-dir,与已打开的 Chrome 互不干扰,**默认不关闭你正在用的 Chrome**)。面板上有一个「启动前先关闭正在运行的 Chrome」勾选项:勾上并点击时才走接管式流程(检测 → 关闭 → 用隔离 profile 重启,点击时有确认弹窗,未保存的页面状态会丢失)。端点就绪后自动连接。
 - **target 列表**:当前可达的页面/worker
 
 参数持久化在用户设置文档(`chrome-cdp` namespace),重启后保留。

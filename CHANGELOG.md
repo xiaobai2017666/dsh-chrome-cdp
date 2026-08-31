@@ -7,6 +7,7 @@
 
 ### Changed
 - **构建产物随 git 提交发布**:`lib/`、`client/` 不再被 `.gitignore` 忽略,随源码一同推送;移除 `prepare` 钩子。`dsh plugin add github:xiaobai2017666/dsh-chrome-cdp` 安装时包内无任何构建脚本 → **不触发 pnpm allowBuilds 门禁、零 prebuild**,更新亦无白名单 key 轮换。
+- **Ensure Chrome 默认不再关闭已打开的 Chrome**:端点不通时直接另起一个带调试端口的独立实例(隔离 user-data-dir,与现有 Chrome 并行);面板新增「启动前先关闭正在运行的 Chrome」勾选项,勾选后才走接管式流程(检测 → 关闭 → 重启,含确认弹窗)。`ensure` RPC 接受 `{ closeRunning: true }` 显式请求接管,结果新增 `existingUntouched` 标记。
 
 ## [0.1.1] — 2026-08-28
 

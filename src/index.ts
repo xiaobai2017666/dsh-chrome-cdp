@@ -136,11 +136,14 @@ async function dispatchCdpRpc(
       return { ok: true, value: up }
     }
     case 'ensure': {
-      // Panel action: probe the endpoint, (re)start Chrome with CDP flags
-      // when it does not answer, then connect. Killing the user's Chrome is
-      // a side effect the panel confirms before calling here.
+      // Panel action: probe the endpoint, launch Chrome with CDP flags when
+      // it does not answer, then connect. By default a running Chrome is
+      // LEFT UNTOUCHED (the isolated user-data-dir makes the new instance a
+      // separate process); only when the client asks closeRunning=true is the
+      // running browser terminated first, which the panel confirms.
       const snapshot = service.getSnapshot()
-      const result = await ensureChromeInstance(snapshot.host, snapshot.port)
+      const closeRunning = readEnsurePayload(payload)
+      const result = await ensureChromeInstance(snapshot.host, snapshot.port, { closeRunning })
       if (result.endpointReady) await service.connect()
       return { ok: true, value: result }
     }
@@ -169,6 +172,13 @@ function readParamsPayload(payload: unknown): Partial<CdpParams> {
   if (typeof raw.autoReconnect === 'boolean') out.autoReconnect = raw.autoReconnect
   if (typeof raw.reconnectDelaySeconds === 'number') out.reconnectDelaySeconds = raw.reconnectDelaySeconds
   return out
+}
+
+/** Narrow an untrusted `ensure` payload into the closeRunning flag. */
+function readEnsurePayload(payload: unknown): boolean {
+  if (typeof payload !== 'object' || payload === null) return false
+  const raw = payload as Record<string, unknown>
+  return raw.closeRunning === true
 }
 
 /** Best-effort human message of an unknown thrown value. */

@@ -338,6 +338,15 @@
   gap: 8px;
 }
 
+.ensureClose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .primary,
 .secondary {
   flex: 1;

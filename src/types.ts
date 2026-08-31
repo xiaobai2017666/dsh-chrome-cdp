@@ -78,6 +78,8 @@ export interface CdpEnsureResult {
   action: 'none' | 'restarted' | 'started'
   /** True when /json/version answered after everything settled. */
   endpointReady: boolean
+  /** True when a running Chrome was left untouched (default mode). */
+  existingUntouched?: boolean
   host: string
   port: number
   /** ISO timestamp of the settle moment. */

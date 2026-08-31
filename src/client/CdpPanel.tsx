@@ -35,11 +35,12 @@ export interface CdpPanelFace {
   /** Ask the host to reconnect now (disconnect + connect). */
   readonly onReconnect: () => Promise<{ ok: boolean; message?: string }>
   /**
-   * Panel action: detect a running Chrome and (re)start it with a CDP port
-   * (probe → terminate → relaunch → connect). Destructive to the running
-   * browser; the panel confirms before calling.
+   * Panel action: detect a CDP endpoint and, when it is not answering, launch
+   * a Chrome with a CDP port. Default mode leaves a running Chrome untouched
+   * (a separate isolated instance is launched); pass { closeRunning: true }
+   * to terminate the running browser first (the panel confirms before that).
    */
-  readonly onEnsureChrome: () => Promise<{ ok: boolean; message?: string }>
+  readonly onEnsureChrome: (options?: { closeRunning?: boolean }) => Promise<{ ok: boolean; message?: string }>
   /** Submit edited params; host reconnects when the endpoint changed. */
   readonly onSetParams: (params: CdpParams) => Promise<{ ok: boolean; message?: string }>
   /** Refresh the targets list on the host side. */
@@ -121,6 +122,7 @@ export function CdpPanel({
   const [busy, setBusy] = useState<string | undefined>(undefined)
   const [actionError, setActionError] = useState<string | undefined>(undefined)
   const [saved, setSaved] = useState(false)
+  const [closeRunning, setCloseRunning] = useState(false)
   const [form, setForm] = useState<ParamsForm>(() => formOf(undefined, undefined))
   const rootRef = useRef<HTMLDivElement>(null)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number }>()
@@ -320,11 +322,22 @@ export function CdpPanel({
                     disabled={busy !== undefined || status.phase === 'connected'}
                     title={t('action.ensureHint')}
                     onClick={() => {
-                      if (!window.confirm(t('action.ensureConfirm'))) return
-                      void runAction('ensure', onEnsureChrome)
+                      // Default mode is non-destructive (a separate instance
+                      // is launched); only closeRunning mode kills the user's
+                      // browser and needs confirmation.
+                      if (closeRunning && !window.confirm(t('action.ensureConfirm'))) return
+                      void runAction('ensure', () => onEnsureChrome(closeRunning ? { closeRunning: true } : undefined))
                     }}
                   >{t('action.ensure')}</button>
                 </div>
+                <label className={css.ensureClose} title={t('action.ensureHint')}>
+                  <input
+                    type="checkbox"
+                    checked={closeRunning}
+                    onChange={(event) => { setCloseRunning(event.target.checked) }}
+                  />
+                  <span>{t('action.ensureCloseLabel')}</span>
+                </label>
                 {actionError !== undefined && (
                   <p className={css.error} role="alert">{t('action.error', { message: actionError })}</p>
                 )}

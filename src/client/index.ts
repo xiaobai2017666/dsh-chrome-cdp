@@ -85,14 +85,16 @@ export function apply(ctx: ClientContext): void {
       await runtime.call('disconnect')
       return runAction('connect')
     },
-    onEnsureChrome: async () => runAction('ensure', undefined, (raw) => {
+    onEnsureChrome: async (options?: { closeRunning?: boolean }) => runAction('ensure', options ?? undefined, (raw) => {
       const value = raw as unknown as CdpEnsureResult
       if (!value.endpointReady) {
         return { ok: false, message: value.error ?? value.hint ?? 'endpoint did not become ready' }
       }
       const key = value.action === 'none'
         ? 'action.ensureNone'
-        : value.action === 'started' ? 'action.ensureStarted' : 'action.ensureRestarted'
+        : value.action === 'started'
+          ? (value.existingUntouched ? 'action.ensureStartedUntouched' : 'action.ensureStarted')
+          : 'action.ensureRestarted'
       return { ok: true, message: t(key) }
     }),
     onSetParams: async (params: CdpParams) => runAction('setParams', params),

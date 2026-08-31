@@ -1,21 +1,28 @@
 /**
- * Chrome instance detection + relaunch for CDP, Host half.
+ * Chrome instance detection + launch for CDP, Host half.
  *
  * One entry point, {@link ensureChromeInstance}: probe the configured CDP
  * endpoint first; when it already answers, nothing is touched. Otherwise
- * scan for a running Chrome, terminate it, and (re)start one Chrome with
- * `--remote-debugging-port` on an isolated user-data-dir — the only
- * invocation shape modern Chrome accepts for CDP (Chrome 136+ ignores the
- * flag on the default profile, and the newer settings-page "Remote
- * debugging" toggle serves a different, discovery-less protocol).
+ * launch one fresh Chrome with `--remote-debugging-port` on an isolated
+ * user-data-dir — the only invocation shape modern Chrome accepts for CDP
+ * (Chrome 136+ ignores the flag on the default profile, and the newer
+ * settings-page "Remote debugging" toggle serves a different,
+ * discovery-less protocol).
+ *
+ * By default a running Chrome is **left untouched**: the isolated
+ * user-data-dir makes the new instance a fully parallel process, so the
+ * user's open browser keeps working while the panel gets a clean CDP
+ * instance. Only when the caller opts into `closeRunning` is the running
+ * browser terminated first (takeover mode).
  *
  * Platform notes:
  * - WSL2 (`/mnt/c` + `WSL_DISTRO_NAME`): drives the Windows Chrome via the
  *   full PowerShell path; mirrored networking makes 127.0.0.1:<port> on the
  *   Windows side reachable from inside WSL.
  * - Linux: `google-chrome`/`chromium`/`chromium-browser` binaries; killed by
- *   `pkill -f` on the binary name, started detached.
- * - macOS: `/Applications/Google Chrome.app/...`, killed by `pkill -f`.
+ *   `pkill -f` (closeRunning only), started detached.
+ * - macOS: `/Applications/Google Chrome.app/...`, killed by `pkill -f`
+ *   (closeRunning only).
  *
  * Never throws — every failure lands in the structured result.
  *
@@ -33,14 +40,16 @@ const run = promisify(execFile)
 /** What {@link ensureChromeInstance} did, in order of preference. */
 export type EnsureAction =
   | 'none' /** endpoint already answered; Chrome untouched */
-  | 'restarted' /** a running Chrome was terminated and relaunched with CDP */
-  | 'started' /** no Chrome was running; one was launched with CDP */
+  | 'restarted' /** closeRunning: a running Chrome was terminated and relaunched with CDP */
+  | 'started' /** a Chrome was launched with CDP (existing instances left untouched unless closeRunning) */
 
 /** Structured outcome — the wire shape of the chrome_ensure tool. */
 export interface EnsureResult {
   action: EnsureAction
   /** True when /json/version answered after everything settled. */
   endpointReady: boolean
+  /** True when a running Chrome was seen and left untouched (default mode). */
+  existingUntouched?: boolean
   host: string
   port: number
   /** ISO timestamp of the settle moment. */
@@ -198,16 +207,18 @@ function spawnDetached(command: string, args: string[]): ReturnType<typeof spawn
 /**
  * Guarantee a CDP-reachable Chrome at host:port.
  *
- * Steps: probe endpoint → (answer: done) → find Chrome → stop any running
- * instance → start one with CDP flags → poll /json/version until it answers
- * (bounded) → report.
+ * Steps: probe endpoint → (answer: done) → find Chrome → launch one with CDP
+ * flags on an isolated user-data-dir (unless {@link EnsureOptions.closeRunning}
+ * is set, in which case any running instance is terminated first) → poll
+ * /json/version until it answers (bounded) → report.
  */
 export async function ensureChromeInstance(
   host: string,
   port: number,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; closeRunning?: boolean } = {},
 ): Promise<EnsureResult> {
   const timeoutMs = options.timeoutMs ?? 30000
+  const closeRunning = options.closeRunning === true
   const steps: string[] = []
   const base = { host, port, checkedAt: new Date().toISOString() }
 
@@ -234,21 +245,29 @@ export async function ensureChromeInstance(
   }
   steps.push(`found ${chrome.label}`)
 
-  // Was a Chrome already running? Detection BEFORE stop, so the action name
-  // can distinguish 'restarted' from 'started'.
-  const running = await detectRunning(chrome)
-  steps.push(running
-    ? 'a Chrome instance is running — terminating it'
-    : 'no running Chrome instance — starting a fresh one')
-  if (running) await chrome.stop()
+  // Default mode: never touch a running browser. The isolated user-data-dir
+  // makes the new instance a separate process, so the user's open Chrome
+  // keeps running untouched. closeRunning: terminate any running instance
+  // first (takeover), which lets the action name distinguish restarted.
+  let running = false
+  if (closeRunning) {
+    running = await detectRunning(chrome)
+    steps.push(running
+      ? 'a Chrome instance is running — terminating it (closeRunning)'
+      : 'no running Chrome instance — starting a fresh one')
+    if (running) await chrome.stop()
+  } else {
+    steps.push('existing Chrome instances (if any) left untouched — launching a separate instance with its own user-data-dir')
+  }
 
   try {
     await chrome.start(port)
   } catch (error) {
     return {
       ...base,
-      action: running ? 'restarted' : 'started',
+      action: closeRunning && running ? 'restarted' : 'started',
       endpointReady: false,
+      ...(closeRunning ? {} : { existingUntouched: true }),
       steps: [...steps, `launch failed: ${messageOf(error)}`],
       error: `launch failed: ${messageOf(error)}`,
       hint: 'check the Chrome executable path and try launching it manually',
@@ -262,8 +281,9 @@ export async function ensureChromeInstance(
       steps.push(`endpoint ready after ${String(timeoutMs - (deadline - Date.now()))}ms`)
       return {
         ...base,
-        action: running ? 'restarted' : 'started',
+        action: closeRunning && running ? 'restarted' : 'started',
         endpointReady: true,
+        ...(closeRunning ? {} : { existingUntouched: true }),
         steps,
       }
     }
@@ -271,11 +291,12 @@ export async function ensureChromeInstance(
   }
   return {
     ...base,
-    action: running ? 'restarted' : 'started',
+    action: closeRunning && running ? 'restarted' : 'started',
     endpointReady: false,
+    ...(closeRunning ? {} : { existingUntouched: true }),
     steps: [...steps, `endpoint did not answer within ${String(timeoutMs)}ms`],
     error: 'Chrome launched but the CDP endpoint never became ready',
-    hint: 'older Chrome builds ignore --remote-debugging-port on the default profile; the isolated user-data-dir flag is required and was passed — check whether another Chrome process raced the launch',
+    hint: 'older Chrome builds ignore --remote-debugging-port on the default profile; the isolated user-data-dir flag is required and was passed — check whether another process races the launch, or that the port is free',
   }
 }
 
