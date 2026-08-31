@@ -310,7 +310,7 @@
 
 .field input:focus-visible {
   outline: none;
-  border-color: var(--dsw-alias-state-focus);
+  border-color: var(--dsw-alias-button-primary-fill);
 }
 
 .check {
@@ -372,8 +372,12 @@
 
 .primary {
   border: none;
-  background: var(--dsw-alias-state-focus);
+  background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-inverted);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
 }
 
 .primary:disabled {
@@ -392,7 +396,6 @@
   cursor: default;
 }
 
-.primary:hover:not(:disabled),
 .secondary:hover:not(:disabled) {
   filter: brightness(1.1);
 }
