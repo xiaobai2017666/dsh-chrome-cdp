@@ -75,16 +75,7 @@ Chrome DevTools Protocol 插件 for [DeepSeek Harness](../deepseek-harness)(DSH)
 dsh plugin --profile web add github:xiaobai2017666/dsh-chrome-cdp
 ```
 
-这是**生产环境安装的主要手段**:不写 `#` ref 时 pnpm 跟踪仓库默认分支(本仓库为 `master`)的最新提交。pnpm 在 `~/.dsh/profiles/web/` 里装 git 依赖并执行 `prepare`(即 `npm run build`)产出 `lib/`、`client/`;`dsh plugin` 检测到包声明 `dsh.bundle`,自动把 `dsh-chrome-cdp` 追加进 `dsh.profile.bundles`。下次启动时 bundle patch 自动插入 host 行(`chrome-cdp`),面板经 `dsh.client` 声明自动挂进 Web GUI——**不需要手写任何 profile patch**。
-
-**首次安装的 allowBuilds 一次性步骤**:pnpm ≥10 会拦截 git 依赖的 `prepare`,add 报错并打印一个 key(解析默认分支后形如 `dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>`),把它原样抄进 `~/.dsh/profiles/web/pnpm-workspace.yaml`:
-
-```yaml
-allowBuilds:
-  dsh-chrome-cdp@https://codeload.github.com/xiaobai2017666/dsh-chrome-cdp/tar.gz/<sha>: true
-```
-
-然后重跑 add。这条白名单的含义是"允许该包在你机器上执行安装时代码",只应给信任的仓库开。注意 pnpm 打印的 key 可能是 `git+ssh://` 形式而非 codeload 形式,**以报错原文为准**。
+这是**生产环境安装的主要手段**:不写 `#` ref 时 pnpm 跟踪仓库默认分支(本仓库为 `master`)的最新提交。`lib/`、`client/` 等构建产物**随 git 提交发布**(不经 npm 发布、不挂 Release),包内没有任何 prepare/build 脚本,所以 pnpm 安装时**不执行任何构建、不触发 allowBuilds 门禁**——一条命令直接装完。`dsh plugin` 检测到包声明 `dsh.bundle`,自动把 `dsh-chrome-cdp` 追加进 `dsh.profile.bundles`;下次启动时 bundle patch 自动插入 host 行(`chrome-cdp`),面板经 `dsh.client` 声明自动挂进 Web GUI——**不需要手写任何 profile patch**。
 
 **默认分支前进后更新**(无 pin 跟踪分支的唯一维护动作):
 
@@ -92,9 +83,9 @@ allowBuilds:
 dsh plugin --profile web update dsh-chrome-cdp
 ```
 
-`update` 重新解析默认分支,lockfile 从旧 commit 跳到新 commit。若新 commit 的 sha 不在 allowBuilds 里,prepare 会再次被拦——按新报错把新 key 补进 allowBuilds,重跑 update。即:**每次跨 commit 更新,白名单 key 轮换一次**。
+因为包内没有构建脚本,更新也**不涉及 allowBuilds 轮换**——`update` 重新解析默认分支,直接跳到新 commit。
 
-> 需要可复现/受控升级时,可以退回 pin 形式 `#<commit-sha>` 或 `#v0.1.1`(tag):spec 与白名单 key 都固定不变,更新变得完全受控;代价是失去"update 即跟进分支"的便利。两种形态随时可用 add 互换,lockfile 会随 add 重写。
+> 需要可复现/受控升级时,可以退回 pin 形式 `#<commit-sha>` 或 `#v0.1.1`(tag):spec 固定不变,更新完全受控;代价是失去"update 即跟进分支"的便利。两种形态随时可用 add 互换,lockfile 会随 add 重写。本仓库按 [Keep a Changelog](../../CHANGELOG.md) 记录每次发版变更,跟随 master 即可获得累积更新。
 
 验证(不启动):
 
@@ -135,7 +126,7 @@ rm -rf ~/.dsh/.agent-presets/chrome-cdp-tools    # 卸载:摘 preset
 
 ### 源码开发(维护者)
 
-源码开发循环(改 `src/` → `npm run build` → 热重载)仍走本地 link:在 harness 的 `apps/cli/package.json` 加 `"dsh-chrome-cdp": "link:/path/to/dsh-chrome-cdp"` 后 `pnpm install --filter @deepseek-ai/dsh`。这条路径只为开发便利,正式安装请用上面的 `dsh plugin` 流程。
+改 `src/` 后 `npm run build`,**产物(`lib/`、`client/`)会随代码一起提交**——它们就是对外发布形态,确保与 `src/` 同步。开发热重载循环(改完想立刻看效果)仍可走本地 link:在 harness 的 `apps/cli/package.json` 加 `"dsh-chrome-cdp": "link:/path/to/dsh-chrome-cdp"` 后 `pnpm install --filter @deepseek-ai/dsh`;或改完直接推,装好的 profile 用 `dsh plugin --profile web update dsh-chrome-cdp` 跟进。正式安装请用上面的 `dsh plugin` 流程。
 
 ---
 
@@ -251,6 +242,7 @@ src/tools/            工具半边
 src/client/           Web 面板(React,CSS Modules)
 bridge.mjs            包根单例(两产物共享,勿打包)
 cordis.patch.yml      host 行插入声明(bundle patch)
+lib/、client/         构建产物,随 git 提交发布(安装零构建)
 presets/chrome-cdp-tools/  agent preset 模板(装到 ~/.dsh/.agent-presets/)
 scripts/              探针与诊断脚本
 DESIGN.tools.md       工具层设计文档

@@ -3,6 +3,11 @@
 本项目的显著变更记录。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [Unreleased]
+
+### Changed
+- **构建产物随 git 提交发布**:`lib/`、`client/` 不再被 `.gitignore` 忽略,随源码一同推送;移除 `prepare` 钩子。`dsh plugin add github:xiaobai2017666/dsh-chrome-cdp` 安装时包内无任何构建脚本 → **不触发 pnpm allowBuilds 门禁、零 prebuild**,更新亦无白名单 key 轮换。
+
 ## [0.1.1] — 2026-08-28
 
 ### Added
