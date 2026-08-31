@@ -364,38 +364,22 @@
 .secondary {
   flex: 1;
   height: 30px;
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 
-.primary {
-  border: none;
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-inverted);
-}
-
-.primary:hover:not(:disabled) {
-  background: var(--dsw-alias-button-primary-hover);
-}
-
-.primary:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.secondary {
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-}
-
+.primary:disabled,
 .secondary:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
+.primary:hover:not(:disabled),
 .secondary:hover:not(:disabled) {
   filter: brightness(1.1);
 }
