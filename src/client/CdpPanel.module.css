@@ -363,6 +363,10 @@
 .primary,
 .secondary {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   height: 30px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
@@ -371,6 +375,22 @@
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+
+/* Inline busy spinner for in-flight actions (save/connect/reconnect). */
+.spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.8;
+  animation: dsh-cdp-spin 0.7s linear infinite;
+}
+
+@keyframes dsh-cdp-spin {
+  to { transform: rotate(360deg); }
 }
 
 .primary:disabled,

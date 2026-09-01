@@ -65,6 +65,7 @@ Chrome DevTools Protocol 插件 for [DeepSeek Harness](../deepseek-harness)(DSH)
 
 - 任意方式安装的 `dsh` CLI(npm 全局或源码 checkout 运行均可)
 - Node ≥ 20,pnpm(`dsh plugin` 底层转发给 pnpm)
+- **dsh ≥ 0.1.2-alpha.3**:0.2.0 起插件对齐该版本的 settings/client API(`installSettingsSection` → `SettingsProvider.installSection`,`dsh-client-runtime` → `dsh-client-store`);旧版 dsh(≤ 0.1.1-rc.2)请用插件 0.1.1。
 
 ### 安装插件包(host 半边 + 面板 + bundle 层)——生产环境主要手段
 

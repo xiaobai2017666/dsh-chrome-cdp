@@ -9,9 +9,9 @@
  * @module dsh-chrome-cdp/client/stores
  */
 
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { CdpStatus } from '../types.ts'
 
 /** Unwrapped RPC outcome as the stores consume it. */

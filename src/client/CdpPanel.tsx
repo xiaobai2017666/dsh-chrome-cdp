@@ -16,7 +16,7 @@ import type { ReactNode } from 'react'
 import { StateDot, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { CdpStatusState } from './stores.ts'
 import type { CdpLocaleKey } from './locales.ts'
 import type { CdpParams, CdpStatus } from '../types.ts'
@@ -288,7 +288,10 @@ export function CdpPanel({
                       type="submit"
                       className={css.primary}
                       disabled={parsed === undefined || busy !== undefined}
-                    >{saved ? t('form.saved') : t('form.save')}</button>
+                    >
+                      {busy === 'save' && <span className={css.spinner} aria-hidden="true" />}
+                      {busy === 'save' ? t('form.saving') : saved ? t('form.saved') : t('form.save')}
+                    </button>
                   </div>
                   {parsed === undefined && (
                     <p className={css.fieldError} role="alert">{t('panel.badPayload')}</p>
@@ -301,14 +304,20 @@ export function CdpPanel({
                       className={css.primary}
                       disabled={busy !== undefined}
                       onClick={() => { void runAction('reconnect', onReconnect) }}
-                    >{t('action.reconnect')}</button>
+                    >
+                      {busy === 'reconnect' && <span className={css.spinner} aria-hidden="true" />}
+                      {busy === 'reconnect' ? t('action.reconnecting') : t('action.reconnect')}
+                    </button>
                   ) : (
                     <button
                       type="button"
                       className={css.primary}
                       disabled={busy !== undefined || status.phase === 'connecting'}
                       onClick={() => { void runAction('connect', onConnect) }}
-                    >{t('action.connect')}</button>
+                    >
+                      {busy === 'connect' && <span className={css.spinner} aria-hidden="true" />}
+                      {busy === 'connect' ? t('action.connecting') : t('action.connect')}
+                    </button>
                   )}
                   <button
                     type="button"

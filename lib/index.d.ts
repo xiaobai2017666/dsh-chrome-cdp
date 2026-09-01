@@ -1,4 +1,3 @@
-import { SettingsNamespace } from "@deepseek-ai/dsh-settings";
 import z from "@deepseek-ai/schemastery";
 import { Context, Service } from "@deepseek-ai/cordis";
 //#region src/types.d.ts
@@ -16,7 +15,7 @@ import { Context, Service } from "@deepseek-ai/cordis";
 /** Connection lifecycle as the Host reports it. */
 type CdpConnectionPhase = 'disconnected' | /** no client and not trying */ 'connecting' | /** a connect attempt is in flight */ 'connected' | /** CDP WebSocket is up */ 'error'; /** last attempt failed; see `error` */
 /** Why the connection dropped, when it did. */
-type CdpDisconnectReason = 'user' | 'socket' | 'params-changed' | 'shutdown';
+type CdpDisconnectReason = 'user' | 'socket' | 'shutdown';
 /** One CDP target as `/json/list` reports it. */
 interface CdpTargetInfo {
   /** Target id (hex string from Chrome). */
@@ -70,8 +69,10 @@ interface CdpParams {
 interface CdpSetParamsResult {
   /** Values the Host accepted and now uses. */
   params: CdpParams;
-  /** A reconnect was started because live params changed. */
-  reconnected: boolean;
+  /** Whether the values were persisted into the user settings document. */
+  persisted: boolean;
+  /** Why persistence was skipped, when it was (settings service absent). */
+  persistenceNote?: string;
 }
 //#endregion
 //#region src/cdp-connection.d.ts
@@ -110,13 +111,28 @@ declare class ChromeCdpService extends Service {
    */
   rawClient(): CdpClientShape | undefined;
   /**
-   * Adopt new parameters (from the settings section or the panel), optionally
-   * reconnecting when the live endpoint changed.
+   * Adopt new parameters (from the settings section or the panel).
+   *
+   * Saving is local: the live connection is never torn down here — the panel
+   * saves the form and connects explicitly, so a save cannot interrupt a
+   * working connection. Endpoint params are adopted for the *next* attempt;
+   * behavior params (auto-reconnect) apply to the running cycle immediately.
+   *
    * @param next - fields to replace; omitted fields keep their value.
-   * @param reconnect - close and reopen when endpoint params changed.
-   * @returns accepted params and whether a reconnect was started.
+   * @returns the accepted params.
    */
-  setParams(next: Partial<CdpParams>, reconnect: boolean): CdpSetParamsResult;
+  setParams(next: Partial<CdpParams>): CdpParams;
+  /**
+   * Save-only variant used by the panel's RPC `setParams` endpoint: adopt the
+   * values, then persist them into the user settings document when a settings
+   * service is mounted. Asynchronous by nature (the document write is awaited)
+   * and never reconnects — connecting stays an explicit button.
+   *
+   * @param next - fields to replace; omitted fields keep their value.
+   * @param persist - called to store the resolved params; skipped when absent.
+   * @returns accepted params plus whether persistence ran.
+   */
+  setParamsAndPersist(next: Partial<CdpParams>, persist?: (params: CdpParams) => Promise<void>): Promise<CdpSetParamsResult>;
   /**
    * Open (or replace) the CDP connection.
    * @returns whether the connection is up when the attempt settles.
@@ -171,22 +187,14 @@ declare module '@deepseek-ai/cordis' {
     connection: {
       rpc: HostConnectionRpcHandle;
     };
+    /** Attachment store; optionality is owned by the Service Definition. */
+    attachments: import('@deepseek-ai/dsh-attachment').AttachmentStore;
   }
 }
-/** Settings namespace owned by this plugin. */
-declare const CHROME_CDP_SETTINGS_NAMESPACE: SettingsNamespace;
+/** Settings namespace owned by this plugin (a plain lowercase identifier). */
+declare const CHROME_CDP_SETTINGS_NAMESPACE = "chrome-cdp";
 /** Connection params schema, used both as plugin Config and settings section. */
-declare const CdpParamsSchema: z<Schemastery.ObjectS<{
-  host: z<string, string>;
-  port: z<number, number>;
-  autoReconnect: z<boolean, boolean>;
-  reconnectDelaySeconds: z<number, number>;
-}>, Schemastery.ObjectT<{
-  host: z<string, string>;
-  port: z<number, number>;
-  autoReconnect: z<boolean, boolean>;
-  reconnectDelaySeconds: z<number, number>;
-}>>;
+declare const CdpParamsSchema: z<CdpParams>;
 /** Host services this plugin requires (the RPC channel registry). */
 declare const inject: string[];
 /** Plugin entry: starts the service and its RPC/settings faces. */

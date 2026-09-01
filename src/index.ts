@@ -17,13 +17,15 @@
  * @module dsh-chrome-cdp
  */
 
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { } from '@deepseek-ai/dsh-attachment'
+import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { ChromeCdpService } from './cdp-connection.ts'
 import { ensureChromeInstance } from './chrome-launcher.ts'
+import { provisionAgentPreset } from './preset-provision.ts'
 import { registerHostBridge } from 'dsh-chrome-cdp/bridge'
 import type { HostBridge } from './tools/dispatch.ts'
 import type { CdpParams, CdpStatus } from './types.ts'
@@ -41,11 +43,13 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Generic RPC channel registry from the client-connection host plugin. */
     connection: { rpc: HostConnectionRpcHandle }
+    /** Attachment store; optionality is owned by the Service Definition. */
+    attachments: import('@deepseek-ai/dsh-attachment').AttachmentStore
   }
 }
 
-/** Settings namespace owned by this plugin. */
-export const CHROME_CDP_SETTINGS_NAMESPACE: SettingsNamespace = settingsNamespace('chrome-cdp')
+/** Settings namespace owned by this plugin (a plain lowercase identifier). */
+export const CHROME_CDP_SETTINGS_NAMESPACE = 'chrome-cdp'
 
 /** Connection params schema, used both as plugin Config and settings section. */
 export const CdpParamsSchema = z.object({
@@ -53,7 +57,7 @@ export const CdpParamsSchema = z.object({
   port: z.number().min(1).max(65535).step(1).default(9222),
   autoReconnect: z.boolean().default(true),
   reconnectDelaySeconds: z.number().min(1).max(600).step(1).default(5),
-})
+}) as z<CdpParams>
 
 /** Live status vocabulary for the panel. */
 export type { CdpStatus, CdpParams } from './types.ts'
@@ -65,13 +69,40 @@ export const inject = ['connection']
 /** Plugin entry: starts the service and its RPC/settings faces. */
 export function apply(ctx: Context, config: CdpParams): void {
   const service = new ChromeCdpService(ctx, config)
-  installSettingsSection(ctx, CHROME_CDP_SETTINGS_NAMESPACE, CdpParamsSchema, config, {
-    // Settings commits adopt resolved params without an immediate reconnect;
-    // the live endpoint keeps serving until the panel asks to reconnect. This
-    // avoids a settings-document save tearing down a working connection.
-    setSource: (current) => { service.setParams(current(), false) },
-    onChange: () => { /* covered by setSource: params already adopted */ },
+  /** The settings provider while one is mounted (undefined otherwise). */
+  const providerRef: { current: SettingsProvider | undefined } = { current: undefined }
+
+  // Agent-preset provisioning: keep `~/.dsh/.agent-presets/chrome-cdp-tools`
+  // current with this install (first boot copies it, later boots re-pin the
+  // tools row; user-authored presets are left alone). Never fails the boot.
+  provisionAgentPreset(ctx, thisPluginVersion())
+
+  // Settings wiring is optional: while a settings service is mounted, the
+  // user document's `chrome-cdp` section resolves over the composition base
+  // and adopts into the live service without an immediate reconnect — a
+  // settings save never tears down a working connection. Losing the settings
+  // service falls back to the composed entry config (the provider contract's
+  // `installSection` owns that attach/detach lifecycle).
+  ctx.inject(['settings'], (sctx) => {
+    providerRef.current = sctx.settings
+    sctx.settings.installSection(ctx, CHROME_CDP_SETTINGS_NAMESPACE, CdpParamsSchema, config, {
+      setSource: (current) => { service.setParams(current()) },
+      onChange: () => { /* covered by setSource: params already adopted */ },
+    })
+    return () => { providerRef.current = undefined }
   })
+
+  /** Persist params into the user settings document. */
+  const persistParams = async (params: CdpParams): Promise<void> => {
+    const provider = providerRef.current
+    if (provider === undefined) throw new Error('settings service not available')
+    await provider.update(CHROME_CDP_SETTINGS_NAMESPACE, {
+      host: params.host,
+      port: params.port,
+      autoReconnect: params.autoReconnect,
+      reconnectDelaySeconds: params.reconnectDelaySeconds,
+    })
+  }
 
   // Tools bridge: expose the connection to the preset-fiber tools half
   // through the module singleton (same Node module registry in-process).
@@ -81,7 +112,7 @@ export function apply(ctx: Context, config: CdpParams): void {
     '/cdp',
     async (endpoint, payload) => {
       try {
-        return await dispatchCdpRpc(service, endpoint, payload)
+        return await dispatchCdpRpc(service, endpoint, payload, persistParams)
       } catch (error) {
         // Never answer ok:false on this channel: the client response-envelope
         // schema whitelists error codes, and a custom code fails its zod
@@ -125,6 +156,7 @@ async function dispatchCdpRpc(
   service: ChromeCdpService,
   endpoint: string,
   payload: unknown,
+  persistParams: (params: CdpParams) => Promise<void>,
 ): Promise<{ ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }> {
   switch (endpoint) {
     case 'status':
@@ -151,7 +183,7 @@ async function dispatchCdpRpc(
       service.disconnect('user')
       return { ok: true, value: service.getSnapshot() }
     case 'setParams':
-      return { ok: true, value: service.setParams(readParamsPayload(payload), true) }
+      return { ok: true, value: await service.setParamsAndPersist(readParamsPayload(payload), persistParams) }
     default:
       // The client's response-envelope schema whitelists error codes; a
       // custom code here would fail its zod union and surface as an
@@ -184,4 +216,14 @@ function readEnsurePayload(payload: unknown): boolean {
 /** Best-effort human message of an unknown thrown value. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** This package's manifest version (resolved from the installed package root). */
+function thisPluginVersion(): string {
+  try {
+    const root = dirname(fileURLToPath(import.meta.url))
+    return JSON.parse(readFileSync(join(root, '..', 'package.json'), 'utf8'))['version'] as string
+  } catch {
+    return '0.0.0'
+  }
 }

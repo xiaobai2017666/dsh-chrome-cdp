@@ -144,30 +144,54 @@ export class ChromeCdpService extends Service {
   }
 
   /**
-   * Adopt new parameters (from the settings section or the panel), optionally
-   * reconnecting when the live endpoint changed.
+   * Adopt new parameters (from the settings section or the panel).
+   *
+   * Saving is local: the live connection is never torn down here — the panel
+   * saves the form and connects explicitly, so a save cannot interrupt a
+   * working connection. Endpoint params are adopted for the *next* attempt;
+   * behavior params (auto-reconnect) apply to the running cycle immediately.
+   *
    * @param next - fields to replace; omitted fields keep their value.
-   * @param reconnect - close and reopen when endpoint params changed.
-   * @returns accepted params and whether a reconnect was started.
+   * @returns the accepted params.
    */
-  setParams(next: Partial<CdpParams>, reconnect: boolean): CdpSetParamsResult {
+  setParams(next: Partial<CdpParams>): CdpParams {
     const resolved = resolveParams(next, this.params)
-    const endpointChanged = resolved.host !== this.params.host || resolved.port !== this.params.port
-    const behaviorChanged = resolved.autoReconnect !== this.params.autoReconnect
-      || resolved.reconnectDelaySeconds !== this.params.reconnectDelaySeconds
     this.params = resolved
     this.publish({
       host: resolved.host,
       port: resolved.port,
       autoReconnect: resolved.autoReconnect,
     })
-    if (behaviorChanged && !resolved.autoReconnect) this.cancelReconnect()
-    if (endpointChanged && reconnect && this.status.phase !== 'connecting') {
-      if (this.status.phase === 'connected') this.disconnect('params-changed')
-      void this.connect()
-      return { params: resolved, reconnected: true }
+    if (!resolved.autoReconnect) this.cancelReconnect()
+    return resolved
+  }
+
+  /**
+   * Save-only variant used by the panel's RPC `setParams` endpoint: adopt the
+   * values, then persist them into the user settings document when a settings
+   * service is mounted. Asynchronous by nature (the document write is awaited)
+   * and never reconnects — connecting stays an explicit button.
+   *
+   * @param next - fields to replace; omitted fields keep their value.
+   * @param persist - called to store the resolved params; skipped when absent.
+   * @returns accepted params plus whether persistence ran.
+   */
+  async setParamsAndPersist(
+    next: Partial<CdpParams>,
+    persist?: (params: CdpParams) => Promise<void>,
+  ): Promise<CdpSetParamsResult> {
+    const params = this.setParams(next)
+    if (persist === undefined) {
+      return { params, persisted: false, persistenceNote: 'settings service not available' }
     }
-    return { params: resolved, reconnected: false }
+    try {
+      await persist(params)
+      return { params, persisted: true }
+    } catch (error) {
+      // The values are already live for the next attempt; only the durable
+      // copy failed and the panel must hear about it.
+      throw new Error(`params applied but not saved: ${failureMessage(error)}`)
+    }
   }
 
   /**

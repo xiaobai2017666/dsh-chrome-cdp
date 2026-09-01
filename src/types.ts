@@ -18,7 +18,7 @@ export type CdpConnectionPhase =
   | 'error' /** last attempt failed; see `error` */
 
 /** Why the connection dropped, when it did. */
-export type CdpDisconnectReason = 'user' | 'socket' | 'params-changed' | 'shutdown'
+export type CdpDisconnectReason = 'user' | 'socket' | 'shutdown'
 
 /** One CDP target as `/json/list` reports it. */
 export interface CdpTargetInfo {
@@ -94,6 +94,8 @@ export interface CdpEnsureResult {
 export interface CdpSetParamsResult {
   /** Values the Host accepted and now uses. */
   params: CdpParams
-  /** A reconnect was started because live params changed. */
-  reconnected: boolean
+  /** Whether the values were persisted into the user settings document. */
+  persisted: boolean
+  /** Why persistence was skipped, when it was (settings service absent). */
+  persistenceNote?: string
 }

@@ -9,7 +9,12 @@
  * @module dsh-chrome-cdp/client
  */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+// Type-only: pulls the SlotRegistry service merge (ctx.slots) and the
+// renderer-declared `Events` (connection/reset) into this program.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls ui-layout's SlotMap merge ('shell.overlay') and
+// ui-sidebar's SlotMap merge ('sidebar.footer.action') into this program.
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -25,12 +30,6 @@ const NS = 'chrome-cdp'
 
 /** Shared busy/error outcome for panel actions. */
 type ActionOutcome = { ok: boolean; message?: string }
-
-/** Shape of the setParams reply used by the client action wrapper. */
-interface CdpSetParamsLike {
-  params: CdpParams
-  reconnected: boolean
-}
 
 /** Client services this plugin consumes (cordis fiber inject). */
 export const inject = ['connection', 'locale', 'slots']
@@ -75,7 +74,11 @@ export function apply(ctx: ClientContext): void {
 
   const face: CdpPanelFace & CdpOverlayFace = {
     hooks: { status: store },
-    onConnect: async () => runAction('connect'),
+    onConnect: async () => {
+      const outcome = await runAction('connect')
+      void refresh()
+      return outcome
+    },
     onDisconnect: async () => {
       const outcome = await runAction('disconnect')
       void refresh()
@@ -83,7 +86,9 @@ export function apply(ctx: ClientContext): void {
     },
     onReconnect: async () => {
       await runtime.call('disconnect')
-      return runAction('connect')
+      const outcome = await runAction('connect')
+      void refresh()
+      return outcome
     },
     onEnsureChrome: async (options?: { closeRunning?: boolean }) => runAction('ensure', options ?? undefined, (raw) => {
       const value = raw as unknown as CdpEnsureResult
@@ -97,7 +102,11 @@ export function apply(ctx: ClientContext): void {
           : 'action.ensureRestarted'
       return { ok: true, message: t(key) }
     }),
-    onSetParams: async (params: CdpParams) => runAction('setParams', params),
+    onSetParams: async (params: CdpParams) => {
+      const outcome = await runAction('setParams', params)
+      void refresh()
+      return outcome
+    },
     onRefreshTargets: async () => {
       const outcome = await runAction('targets')
       void refresh()
