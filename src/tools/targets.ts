@@ -63,9 +63,13 @@ export class TargetSessionManager {
     // Route flat-session lifecycle events into the cache.
     this.listen('Target.attachedToTarget', (params) => {
       const p = params as { targetInfo?: { targetId?: string }, sessionId?: string }
-      const targetId = p.targetInfo?.targetId
       const sessionId = p.sessionId
-      if (typeof targetId !== 'string' || typeof sessionId !== 'string') return
+      if (typeof sessionId !== 'string') return
+      // Prefer the advertised targetInfo; older flows (and some Chrome
+      // responses) omit it — then the reverse map tells us which target this
+      // session belongs to (the explicit attach already remembered it).
+      const targetId = p.targetInfo?.targetId ?? this.bySessionId.get(sessionId)
+      if (typeof targetId !== 'string') return
       this.remember(targetId, sessionId)
       this.events.onSessionAttached?.(targetId, sessionId)
     })
@@ -105,6 +109,11 @@ export class TargetSessionManager {
     return this.sessions.has(targetId)
   }
 
+  /** The cached session id for a target, when one exists. */
+  sessionIdOf(targetId: string): string | undefined {
+    return this.sessions.get(targetId)?.sessionId
+  }
+
   /** All currently cached sessions. */
   entries(): ReadonlyMap<string, { sessionId: string }> {
     return this.sessions
@@ -124,6 +133,15 @@ export class TargetSessionManager {
     }
     // Unknown session (raced detach): enable blind; Chrome tolerates it once.
     await this.client.send(`${domain}.enable`, undefined, sessionId)
+  }
+
+  /** Mark a domain as already enabled (the manager sent the enable itself). */
+  markEnabled(domain: string, sessionId: string): void {
+    for (const entry of this.sessions.values()) {
+      if (entry.sessionId !== sessionId) continue
+      entry.enabled.add(domain)
+      return
+    }
   }
 
   /** Drop everything (socket lost / manager disposed). */

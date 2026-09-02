@@ -32,6 +32,13 @@ export interface ToolSpec {
   }
   /** Tool group for config gating; also the concurrency bucket. */
   group: 'navigation' | 'diagnostics' | 'debug' | 'interaction' | 'raw'
+  /**
+   * Harness-enforced call budget (ms). Every chrome_* tool talks to a browser
+   * that can freeze its event loop (breakpoint pause); the dispatch layer
+   * bounds its CDP waits itself, and this is the outer backstop so a hung
+   * call can never park the agent turn forever.
+   */
+  timeoutMs: number
 }
 
 /** Render helper: JSON text block. */
@@ -66,6 +73,12 @@ const TARGET_PARAM: ParamSpec = {
   description: 'Target id from chrome_list_targets; defaults to the active page.',
 }
 
+/** Harness-enforced call budgets: the dispatch layer bounds each CDP wait well below these. */
+const QUICK_TIMEOUT_MS = 30_000
+const INTERACT_TIMEOUT_MS = 45_000
+const NAV_TIMEOUT_MS = 90_000
+const RAW_CDP_TIMEOUT_MS = 60_000
+
 /** The 11 tool specs, grouped. */
 export const TOOL_SPECS: readonly ToolSpec[] = [
 
@@ -75,6 +88,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     description: 'List Chrome targets (tabs/windows/workers) reachable over CDP. Start here to find the targetId of the page you want to operate on; every other tool accepts that targetId.',
     parameters: {},
     group: 'navigation',
+    timeoutMs: QUICK_TIMEOUT_MS,
     output: {
       schema: obj({
         targets: arr(obj({
@@ -93,6 +107,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'navigation',
+    timeoutMs: NAV_TIMEOUT_MS,
     output: {
       schema: obj({
         frameId: str,
@@ -112,6 +127,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'navigation',
+    timeoutMs: INTERACT_TIMEOUT_MS,
     output: {
       schema: obj({
         type: str,
@@ -135,6 +151,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'diagnostics',
+    timeoutMs: QUICK_TIMEOUT_MS,
     output: {
       schema: obj({
         entries: arr(obj({
@@ -158,6 +175,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'diagnostics',
+    timeoutMs: QUICK_TIMEOUT_MS,
     output: {
       schema: obj({
         requests: arr(obj({
@@ -174,7 +192,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   // ── debug group ───────────────────────────────────────────────────────────
   {
     name: 'chrome_debug',
-    description: 'Control the Debugger on a Chrome page: pause/resume/step, and evaluate expressions on the paused call frames (inspect locals). While paused, chrome_evaluate is blocked — use this tool\'s eval action.',
+    description: 'Control the Debugger on a Chrome page: pause/resume/step, and evaluate expressions on the paused call frames (inspect locals). While paused, chrome_evaluate is blocked — use this tool\'s eval action. Resume succeeds even when Chrome\'s pause flag disagrees with the host view (it applies a pause→resume recovery).',
     parameters: {
       action: {
         type: 'string',
@@ -187,6 +205,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'debug',
+    timeoutMs: QUICK_TIMEOUT_MS,
     output: {
       schema: looseObj,
       render: (_a, v) => asText(v),
@@ -194,12 +213,12 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   },
   {
     name: 'chrome_breakpoint',
-    description: 'Manage breakpoints on a Chrome page: set by URL+line (optional condition), list, remove, and list parsed scripts to locate lines.',
+    description: 'Manage breakpoints on a Chrome page: set by URL+line (optional condition), list, remove (a stale/unknown id still counts as removed), clear all tracked breakpoints, and list parsed scripts to locate lines. IMPORTANT: never park a breakpoint inside a synchronous mouse/key event handler and then drive the page with chrome_click/chrome_type — the page freezes until the pause resumes. Remove the breakpoint before clicking.',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['set', 'list', 'remove', 'scripts'],
+        enum: ['set', 'list', 'remove', 'clear', 'scripts'],
         description: 'Breakpoint management action.',
       },
       url: { type: 'string', description: 'set: script URL or substring to match.' },
@@ -210,6 +229,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'debug',
+    timeoutMs: QUICK_TIMEOUT_MS,
     output: {
       schema: looseObj,
       render: (_a, v) => asText(v),
@@ -227,6 +247,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'interaction',
+    timeoutMs: INTERACT_TIMEOUT_MS,
     output: {
       schema: looseObj,
       render: (_a, v) => asText(v),
@@ -234,7 +255,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   },
   {
     name: 'chrome_click',
-    description: 'Click an element in a Chrome page: by CSS selector, or at viewport coordinates. Uses trusted input dispatch (not synthetic DOM events).',
+    description: 'Click an element in a Chrome page: by CSS selector, or at viewport coordinates. Uses trusted input dispatch (not synthetic DOM events). Refuses with a hint while the target is paused at a breakpoint (a click would freeze), and bounds the click wait so a mid-call pause surfaces as a recoverable error instead of a hang.',
     parameters: {
       selector: { type: 'string', description: 'CSS selector of the element to click.' },
       x: { type: 'integer', description: 'Viewport x coordinate (alternative to selector).' },
@@ -242,6 +263,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'interaction',
+    timeoutMs: INTERACT_TIMEOUT_MS,
     output: {
       schema: looseObj,
       render: (_a, v) => asText(v),
@@ -256,6 +278,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'interaction',
+    timeoutMs: INTERACT_TIMEOUT_MS,
     output: {
       schema: looseObj,
       render: (_a, v) => asText(v),
@@ -273,6 +296,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       ...targetParam(),
     },
     group: 'raw',
+    timeoutMs: RAW_CDP_TIMEOUT_MS,
     output: {
       schema: looseObj,
       render: (_a, v) => asText(v),

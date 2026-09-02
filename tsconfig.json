@@ -13,5 +13,5 @@
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true
   },
-  "include": ["src/index.ts", "src/cdp-connection.ts", "src/types.ts", "src/cri.d.ts"]
+  "include": ["src/index.ts", "src/cdp-connection.ts", "src/types.ts", "src/cri.d.ts", "src/tools/index.ts"]
 }

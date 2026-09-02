@@ -3,6 +3,26 @@
 本项目的显著变更记录。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.2.2] — 2026-09-02
+
+### Fixed
+- **断点暂停不再永久卡死交互工具（2026-09 postmortem）**:Chrome 页面在同步 mouse 事件处理器内命中断点时,页面的 CDP 事件循环被挂起,`Input.dispatchMouseEvent` 的应答永不返回——旧版 `chrome_click`/`chrome_type` 无超时无取消,工具调用无限挂起,并连带出"Session with given id not found"、"status 显示 paused 但 resume 报 not paused"、`chrome_breakpoint remove` 返回 `removed:false` 等一连串次生故障。修复贯穿四层:
+  - **会话钉扎（session pinning）**(`src/tools/debugger.ts`):Debugger 域的状态（paused/scripts/breakpoints）改按 targetId 记录,工作会话按 target 钉扎;auto-attach 换发新 flat session 时显式 re-pin 并清空陈旧 pause 状态,`Debugger.enable` 每会话只发一次。CRI 事件订阅每个事件只挂一次监听,处理器内部按事件携带的 sessionId 路由（CRI 的 `on()` 第三参不生效,旧的全局监听会把 A 目标的 pause 事件算到 B 目标头上）。
+  - **暂停前置检查**(`src/tools/dispatch.ts`):目标处于断点暂停时,`chrome_click`/`chrome_type`/`chrome_evaluate` 直接拒绝并返回结构化错误 + 恢复提示（先 `chrome_debug resume` 或移除断点）,不再发出注定挂起的 Input/Runtime 派发。
+  - **有界等待**(`waitBounded`):所有 CDP 命令（Input 派发、Runtime.evaluate、Page.navigate、screenshot、Debugger、`chrome_cdp` 透传）都在硬时间预算内等待,超时转换为带恢复路径的错误文案;同时感知 harness 的 abort 信号,工具调用被取消时立即返回。预算集中在 `WAIT_BUDGETS` 表,始终低于工具级超时。
+  - **harness 侧兜底**(`src/tools/schema.ts` + `src/tools/index.ts`):每个 `chrome_*` 工具都声明 `timeoutMs`,由 harness 的 timeout-policy 插件武装截止时间,挂起的调用被替换为结构化 `TOOL_TIMEOUT` 结果,agent 轮次不再被无限占用。
+- **resume 的 pause→resume 恢复**:Chrome 侧不认为目标暂停（host 状态陈旧或 resume 丢失）而 host 仍有暂停痕迹时,`chrome_debug resume` 自动执行 postmortem 验证过的 `Debugger.pause` + `Debugger.resume` 组合并报告 `recovered:true`;无任何暂停痕迹时仍明确报错而非凭空发明暂停。
+- **removeBreakpoint 容忍陈旧 id**:会话被替换后 Chrome 已丢弃断点,移除命令报 "Session with given id not found" 属"已消失"——现在一律返回 `removed:true` 并清空 host 记录,不再出现"断点看起来删不掉、每次点击又命中"的死循环。
+- **`chrome_debug`/`chrome_breakpoint` 默认目标解析修复**:`resolveTargetId` 原为同步懒解析,省略 targetId 时直接返回 undefined 导致 "no page target available";现改为异步解析（/json/list 决定默认页面）后,debug/breakpoint 组在省略 targetId 时正常工作。
+- **默认目标解析下 evaluate 的 targetId 一致性**:`chrome_evaluate` 的暂停检查现在与实际发命令的 target 同源,不再出现"检查的是 A 目标、暂停的是 B 目标"的错位。
+- **socket 判死分类扩展**:`isSocketDeath` 现在识别 "Session with given id not found"（flat session 死亡）,socket 丢失后下一调用重建 generation,不再对着死会话缓存反复敲命令。
+
+### Added
+- **`chrome_breakpoint clear` 动作**:一键移除目标上所有本插件跟踪的断点（容错陈旧 id）,替代逐个 remove。
+- **单元测试**(`tests/`,40 例,`pnpm test`):假 CDP 客户端上覆盖 sessionId 事件路由、会话重钉清陈旧状态、陈旧断点移除、pause→resume 恢复、点击/输入/evaluate 暂停前置检查、点击挂起的有界失败（毫秒级即可复现 postmortem 死锁并验证恢复路径）、not-connected、socket 死亡重置等。不依赖真实 Chrome,调试过程中不会阻塞 DSH 进程。
+- **工具超时声明**:11 个工具全部声明 `timeoutMs`(30–90s,`chrome_cdp` 60s),作为 dispatch 层有界等待之外的最终兜底。
+- `chrome_click`/`chrome_type`/`chrome_breakpoint` 工具描述更新:警示"断点停在同步 mouse/key 处理器内时驱动页面会冻结页面",指引先移除断点或 resume。
+
 ## [0.2.1] — 2026-09-01
 
 ### Added

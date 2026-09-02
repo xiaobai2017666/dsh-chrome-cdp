@@ -68,17 +68,21 @@ function buildTool(spec: (typeof TOOL_SPECS)[number]): ToolDefinition {
     name: spec.name,
     description: spec.description,
     parameters: specToParameters(spec.parameters),
+    // Harness-side backstop: the timeout-policy plugin arms this deadline and
+    // replaces a hung call with a structured TOOL_TIMEOUT result. The dispatch
+    // layer bounds each CDP wait itself; this catches whatever slips past.
+    timeoutMs: spec.timeoutMs,
     output: {
       schema: spec.output.schema as never,
       render: (args: unknown, value: unknown) => spec.output.render(args, value),
     },
-    execute: async (args: unknown): Promise<unknown> => {
-      const bridge = bridgeModule.hostBridge.current
+    execute: async (args: unknown, exec: { signal?: AbortSignal }): Promise<unknown> => {
+      const bridge = bridgeModule.hostBridge.current as HostBridge | undefined
       if (bridge === undefined) {
         return { error: 'chrome-cdp host half not loaded', hint: 'ensure the dsh-chrome-cdp row is enabled in the host tree' }
       }
       const dispatcher = ensureDispatcher(bridge)
-      return await dispatcher.dispatch(spec.name, args)
+      return await dispatcher.dispatch(spec.name, args, exec?.signal === undefined ? {} : { signal: exec.signal })
     },
   } as never) as ToolDefinition
 }

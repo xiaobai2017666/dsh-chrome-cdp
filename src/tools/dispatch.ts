@@ -13,6 +13,7 @@ import type { CdpStatus, CdpTargetInfo } from '../types.ts'
 import { serializeCdpValue, serializeRemoteObject } from './serialize.ts'
 import { CaptureManager } from './capture.ts'
 import { DebuggerManager } from './debugger.ts'
+import type { ResumeResult } from './debugger.ts'
 import { TargetSessionManager, pickDefaultTarget } from './targets.ts'
 import type { SessionClient, TargetSession } from './targets.ts'
 
@@ -46,6 +47,32 @@ interface ToolError {
 /** Dispatch result: value or structured error. */
 type DispatchOutcome = Record<string, unknown> | ToolError
 
+/**
+ * Per-call CDP wait budgets. Named so tests can shrink them (a real deadlock
+ * must surface in milliseconds, not after a 30s wall); production uses the
+ * defaults. Always below the tool-level `timeoutMs` backstop.
+ */
+export const WAIT_BUDGETS = {
+  /** Input dispatch (click/type) — the tools that deadlock on a pause. */
+  input: 10_000,
+  /** Runtime.evaluate — queueable forever on a paused target. */
+  evaluate: 15_000,
+  /** Page.navigate send (the load wait is separately bounded). */
+  navigate: 10_000,
+  /** Screenshot capture. */
+  screenshot: 10_000,
+  /** Debugger/breakpoint commands (fast protocol round-trips). */
+  debug: 10_000,
+  /** chrome_cdp raw pass-through. */
+  raw: 30_000,
+} as const
+
+/** Per-call dispatch options threaded from the tool execute() context. */
+export interface DispatchOptions {
+  /** Caller cancellation; bounded waits observe it and settle early. */
+  signal?: AbortSignal
+}
+
 /** Per-connection state, rebuilt on socket loss. */
 export class ToolDispatcher {
   private generation: Generation | undefined
@@ -68,12 +95,12 @@ export class ToolDispatcher {
   }
 
   /** Entry point for every tool execute(). */
-  async dispatch(name: string, args: unknown): Promise<DispatchOutcome> {
+  async dispatch(name: string, args: unknown, options: DispatchOptions = {}): Promise<DispatchOutcome> {
     if (name !== 'chrome_list_targets' && !this.connected()) {
       return notConnected()
     }
     try {
-      return await this.route(name, args)
+      return await this.route(name, args, options.signal)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (message.includes('not-connected')) return notConnected()
@@ -86,19 +113,19 @@ export class ToolDispatcher {
 
   // ── routing ───────────────────────────────────────────────────────────────
 
-  private async route(name: string, args: unknown): Promise<DispatchOutcome> {
+  private async route(name: string, args: unknown, signal?: AbortSignal): Promise<DispatchOutcome> {
     switch (name) {
       case 'chrome_list_targets': return this.listTargets()
-      case 'chrome_navigate': return this.navigate(argsOf(args))
-      case 'chrome_evaluate': return this.evaluate(argsOf(args))
+      case 'chrome_navigate': return this.navigate(argsOf(args), signal)
+      case 'chrome_evaluate': return this.evaluate(argsOf(args), signal)
       case 'chrome_console': return this.console(argsOf(args))
       case 'chrome_network': return this.network(argsOf(args))
-      case 'chrome_debug': return this.debug(argsOf(args))
-      case 'chrome_breakpoint': return this.breakpoint(argsOf(args))
-      case 'chrome_screenshot': return this.screenshot(argsOf(args))
-      case 'chrome_click': return this.click(argsOf(args))
-      case 'chrome_type': return this.type(argsOf(args))
-      case 'chrome_cdp': return this.rawCdp(argsOf(args))
+      case 'chrome_debug': return this.debug(argsOf(args), signal)
+      case 'chrome_breakpoint': return this.breakpoint(argsOf(args), signal)
+      case 'chrome_screenshot': return this.screenshot(argsOf(args), signal)
+      case 'chrome_click': return this.click(argsOf(args), signal)
+      case 'chrome_type': return this.type(argsOf(args), signal)
+      case 'chrome_cdp': return this.rawCdp(argsOf(args), signal)
       default: return { error: `unknown tool ${name}` }
     }
   }
@@ -117,26 +144,32 @@ export class ToolDispatcher {
       if (gen.debugger.pausedOf(t.id) !== null) dbgPaused.add(t.id)
     }
     const fallback = this.defaultTargetId ?? pickDefaultTarget(targets)
+    const defaultId = await this.resolveTargetId(undefined) ?? fallback
     return {
       targets: targets.map(t => ({
         id: t.id,
         type: t.type,
         title: t.title,
         url: t.url,
-        isDefault: t.id === (this.resolveTargetId(undefined) ?? fallback),
+        isDefault: t.id === defaultId,
         paused: dbgPaused.has(t.id),
       })),
     }
   }
 
-  private async navigate(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async navigate(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const url = readString(args.url)
     if (url === undefined) return { error: 'url is required' }
     const session = await this.sessionFor(args, { wantPage: true })
     await session.ensureEnabled('Page')
     const gen = this.ensureGeneration()
     gen.capture.ensureEnabled(session.sessionId, this.lastTargetUsed ?? '', []).catch(() => {})
-    const nav = await session.send('Page.navigate', { url }) as {
+    const nav = await waitBounded(
+      (signal) => session.send('Page.navigate', { url }),
+      readInt(args.waitMs) ?? WAIT_BUDGETS.navigate,
+      signal,
+      'chrome_navigate',
+    ) as {
       frameId?: string
       loaderId?: string
       errorText?: string
@@ -154,10 +187,10 @@ export class ToolDispatcher {
     }
   }
 
-  private async evaluate(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async evaluate(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const expression = readString(args.expression)
     if (expression === undefined) return { error: 'expression is required' }
-    const targetId = this.resolveTargetId(readString(args.targetId))
+    const targetId = await this.resolveTargetId(readString(args.targetId))
     if (targetId === undefined) return { error: 'no page target available; pass targetId from chrome_list_targets' }
     // Paused guard: plain evaluate on a paused target queues forever.
     const gen = this.ensureGeneration()
@@ -166,11 +199,16 @@ export class ToolDispatcher {
     }
     const session = await this.sessionFor(args, { wantPage: true })
     await session.ensureEnabled('Runtime')
-    const result = await session.send('Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-      awaitPromise: readBool(args.awaitPromise) ?? true,
-    }) as {
+    const result = await waitBounded(
+      (signal) => session.send('Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        awaitPromise: readBool(args.awaitPromise) ?? true,
+      }),
+      WAIT_BUDGETS.evaluate,
+      signal,
+      'chrome_evaluate',
+    ) as {
       result?: { type?: string; className?: string; value?: unknown; description?: string }
       exceptionDetails?: { text?: string; exception?: { description?: string } }
     }
@@ -192,7 +230,7 @@ export class ToolDispatcher {
   // ── diagnostics group ─────────────────────────────────────────────────────
 
   private async console(args: Record<string, unknown>): Promise<DispatchOutcome> {
-    const targetId = this.resolveTargetId(readString(args.targetId))
+    const targetId = await this.resolveTargetId(readString(args.targetId))
     if (targetId === undefined) return { error: 'no page target available' }
     const session = await this.sessionFor(args, { wantPage: true })
     const gen = this.ensureGeneration()
@@ -209,7 +247,7 @@ export class ToolDispatcher {
   }
 
   private async network(args: Record<string, unknown>): Promise<DispatchOutcome> {
-    const targetId = this.resolveTargetId(readString(args.targetId))
+    const targetId = await this.resolveTargetId(readString(args.targetId))
     if (targetId === undefined) return { error: 'no page target available' }
     const session = await this.sessionFor(args, { wantPage: true })
     const gen = this.ensureGeneration()
@@ -228,13 +266,22 @@ export class ToolDispatcher {
 
   // ── debug group ───────────────────────────────────────────────────────────
 
-  private async debug(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async debug(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const action = readString(args.action)
-    const targetId = this.resolveTargetId(readString(args.targetId))
+    const targetId = await this.resolveTargetId(readString(args.targetId))
     if (targetId === undefined) return { error: 'no page target available' }
-    const session = await this.sessionFor(args, { wantPage: true })
     const gen = this.ensureGeneration()
-    await gen.debugger.attachSession(session.sessionId, targetId)
+    // The Debugger domain lives on ONE pinned session per target. Sending
+    // pause/resume/eval to whichever session sessionFor() hands out breaks
+    // the moment auto-attach replaces the cache entry (the postmortem's
+    // "Session with given id not found").
+    let sessionId = gen.debugger.sessionOf(targetId)
+    if (sessionId === null) {
+      const session = await this.sessionFor(args, { wantPage: true })
+      await gen.debugger.attachSession(session.sessionId, targetId)
+      gen.sessions.markEnabled('Debugger', session.sessionId)
+      sessionId = session.sessionId
+    }
     switch (action) {
       case 'status': {
         const paused = gen.debugger.pausedOf(targetId)
@@ -243,23 +290,29 @@ export class ToolDispatcher {
           : { paused: true, ...paused }
       }
       case 'pause':
-        await gen.debugger.pause(session.sessionId, targetId)
+        await waitBounded(
+          () => this.client().send('Debugger.pause', undefined, sessionId),
+          WAIT_BUDGETS.debug,
+          signal,
+          'chrome_debug pause',
+        )
         return { paused: true, hint: 'pause requested; poll chrome_debug status until callFrames appear' }
-      case 'resume':
-        await gen.debugger.resume(session.sessionId, targetId)
-        return { paused: false }
+      case 'resume': {
+        const result: ResumeResult = await gen.debugger.resume(sessionId, targetId)
+        return { paused: false, resumed: result.resumed, recovered: result.recovered ?? false }
+      }
       case 'step_into':
       case 'step_over':
       case 'step_out': {
         const kind = action === 'step_into' ? 'into' : action === 'step_over' ? 'over' : 'out'
-        await gen.debugger.step(session.sessionId, targetId, kind)
+        await gen.debugger.step(sessionId, targetId, kind)
         return { paused: true, hint: 'step issued; poll chrome_debug status for the new top frame' }
       }
       case 'eval': {
         const expression = readString(args.expression)
         if (expression === undefined) return { error: 'expression is required for eval' }
         const frameIndex = readInt(args.frame) ?? 0
-        const value = await gen.debugger.evaluateOnFrame(session.sessionId, targetId, expression, frameIndex)
+        const value = await gen.debugger.evaluateOnFrame(sessionId, targetId, expression, frameIndex)
         return { value: serializeRemoteObject(value) }
       }
       default:
@@ -267,24 +320,37 @@ export class ToolDispatcher {
     }
   }
 
-  private async breakpoint(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async breakpoint(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const action = readString(args.action)
-    const targetId = this.resolveTargetId(readString(args.targetId))
+    const targetId = await this.resolveTargetId(readString(args.targetId))
     if (targetId === undefined) return { error: 'no page target available' }
-    const session = await this.sessionFor(args, { wantPage: true })
     const gen = this.ensureGeneration()
-    await gen.debugger.attachSession(session.sessionId, targetId)
+    // Same session discipline as chrome_debug: commands must ride the pinned
+    // Debugger session or Chrome answers "Session with given id not found".
+    let sessionId = gen.debugger.sessionOf(targetId)
+    if (sessionId === null) {
+      const session = await this.sessionFor(args, { wantPage: true })
+      await gen.debugger.attachSession(session.sessionId, targetId)
+      gen.sessions.markEnabled('Debugger', session.sessionId)
+      sessionId = session.sessionId
+    }
+    const pinned = sessionId
     switch (action) {
       case 'set': {
         const url = readString(args.url)
         const line = readInt(args.line)
         if (url === undefined || line === undefined) return { error: 'url and line are required for set' }
-        const info = await gen.debugger.setBreakpoint(session.sessionId, targetId, {
-          url,
-          line,
-          column: readInt(args.column) ?? undefined,
-          condition: readString(args.condition) ?? undefined,
-        })
+        const info = await waitBounded(
+          () => gen.debugger.setBreakpoint(pinned, targetId, {
+            url,
+            line,
+            column: readInt(args.column) ?? undefined,
+            condition: readString(args.condition) ?? undefined,
+          }),
+          WAIT_BUDGETS.debug,
+          signal,
+          'chrome_breakpoint set',
+        )
         return { breakpoint: info }
       }
       case 'list':
@@ -292,8 +358,26 @@ export class ToolDispatcher {
       case 'remove': {
         const id = readString(args.id)
         if (id === undefined) return { error: 'id is required for remove' }
-        const removed = await gen.debugger.removeBreakpoint(session.sessionId, targetId, id)
+        const removed = await waitBounded(
+          () => gen.debugger.removeBreakpoint(pinned, targetId, id),
+          WAIT_BUDGETS.debug,
+          signal,
+          'chrome_breakpoint remove',
+        )
         return { removed }
+      }
+      case 'clear': {
+        try {
+          const ids = await waitBounded(
+            () => gen.debugger.removeAllBreakpoints(pinned, targetId),
+            WAIT_BUDGETS.debug,
+            signal,
+            'chrome_breakpoint clear',
+          )
+          return { cleared: true, removed: ids }
+        } catch (error) {
+          return { cleared: false, error: messageOf(error) }
+        }
       }
       case 'scripts':
         return { scripts: gen.debugger.scriptsOf(targetId) }
@@ -304,14 +388,19 @@ export class ToolDispatcher {
 
   // ── interaction group ─────────────────────────────────────────────────────
 
-  private async screenshot(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async screenshot(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const format = readString(args.format) === 'jpeg' ? 'jpeg' : 'png'
     const persist = readBool(args.persist) ?? this.bridge.attachmentsAvailable()
     const session = await this.sessionFor(args, { wantPage: true })
     await session.ensureEnabled('Page')
     const params: Record<string, unknown> = { format }
     if (format === 'jpeg') params.quality = clampInt(readInt(args.quality), 0, 100, 80)
-    const shot = await session.send('Page.captureScreenshot', params) as { data?: string }
+    const shot = await waitBounded(
+      () => session.send('Page.captureScreenshot', params),
+      WAIT_BUDGETS.screenshot,
+      signal,
+      'chrome_screenshot',
+    ) as { data?: string }
     if (typeof shot.data !== 'string') return { error: 'screenshot returned no data' }
     if (!persist) {
       return { format, persisted: false, base64Bytes: shot.data.length, data: clipBase64(shot.data) }
@@ -328,10 +417,21 @@ export class ToolDispatcher {
     }
   }
 
-  private async click(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async click(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const selector = readString(args.selector)
     const x = readInt(args.x)
     const y = readInt(args.y)
+    // A breakpoint parked on a synchronous mouse handler makes the input
+    // dispatch never answer — refuse up front with the recovery path instead
+    // of hanging until the harness aborts the tool call.
+    const gen = this.ensureGeneration()
+    const targetId = await this.resolveTargetId(readString(args.targetId))
+    if (targetId !== undefined && gen.debugger.pausedOf(targetId) !== null) {
+      return {
+        error: 'target is paused at a breakpoint; a click would hang until the handler resumes',
+        hint: 'run chrome_debug resume first (or remove the breakpoint), then retry the click',
+      }
+    }
     const session = await this.sessionFor(args, { wantPage: true })
     await session.ensureEnabled('DOM')
     let point = { x: 0, y: 0 }
@@ -346,7 +446,9 @@ export class ToolDispatcher {
     } else {
       return { error: 'selector or x/y coordinates are required' }
     }
-    await dispatchMouse(session, point)
+    // Bounded so a mid-call pause (breakpoint hit between the check above and
+    // the dispatch) surfaces as an error with recovery guidance, not a hang.
+    await dispatchMouseBounded(session, point, signal)
     return {
       clicked: true,
       x: point.x,
@@ -357,9 +459,17 @@ export class ToolDispatcher {
     }
   }
 
-  private async type(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async type(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const text = readString(args.text)
     if (text === undefined) return { error: 'text is required' }
+    const gen = this.ensureGeneration()
+    const targetId = await this.resolveTargetId(readString(args.targetId))
+    if (targetId !== undefined && gen.debugger.pausedOf(targetId) !== null) {
+      return {
+        error: 'target is paused at a breakpoint; typing would hang until the handler resumes',
+        hint: 'run chrome_debug resume first (or remove the breakpoint), then retry',
+      }
+    }
     const session = await this.sessionFor(args, { wantPage: true })
     const selector = readString(args.selector)
     if (selector !== undefined) {
@@ -367,7 +477,7 @@ export class ToolDispatcher {
       if (typeof located === 'string') return { error: located }
       await session.send('Input.insertText', { text: '' }).catch(() => {})
       // Click focuses; insertText commits the value through the input pipeline.
-      await dispatchMouse(session, located.point)
+      await dispatchMouseBounded(session, located.point, signal)
     }
     await typeText(session, text)
     return { typed: true, length: text.length }
@@ -375,7 +485,7 @@ export class ToolDispatcher {
 
   // ── raw group ─────────────────────────────────────────────────────────────
 
-  private async rawCdp(args: Record<string, unknown>): Promise<DispatchOutcome> {
+  private async rawCdp(args: Record<string, unknown>, signal?: AbortSignal): Promise<DispatchOutcome> {
     const method = readString(args.method)
     if (method === undefined) return { error: 'method is required' }
     if (!/^[A-Z][A-Za-z]+\.[a-zA-Z][A-Za-z0-9]*$/.test(method)) {
@@ -383,17 +493,32 @@ export class ToolDispatcher {
     }
     const explicitSession = readString(args.sessionId)
     if (explicitSession !== undefined) {
-      const result = await this.client().send(method, args.params, explicitSession)
+      const result = await waitBounded(
+        () => this.client().send(method, args.params, explicitSession),
+        WAIT_BUDGETS.raw,
+        signal,
+        `chrome_cdp ${method}`,
+      )
       return { result: serializeCdpValue(result) }
     }
     const targetId = readString(args.targetId)
     if (targetId === undefined) {
       // Browser-level command.
-      const result = await this.client().send(method, args.params)
+      const result = await waitBounded(
+        () => this.client().send(method, args.params),
+        WAIT_BUDGETS.raw,
+        signal,
+        `chrome_cdp ${method}`,
+      )
       return { result: serializeCdpValue(result) }
     }
     const session = await this.sessionFor(args, { wantPage: false })
-    const result = await session.send(method, args.params)
+    const result = await waitBounded(
+      () => session.send(method, args.params),
+      WAIT_BUDGETS.raw,
+      signal,
+      `chrome_cdp ${method}`,
+    )
     return { result: serializeCdpValue(result) }
   }
 
@@ -422,18 +547,18 @@ export class ToolDispatcher {
   }
 
   /** Resolve (and remember) the target a call operates on. */
-  private resolveTargetId(explicit: string | undefined): string | undefined {
+  private async resolveTargetId(explicit: string | undefined): Promise<string | undefined> {
     if (explicit !== undefined) {
       this.lastTargetUsed = explicit
       return explicit
     }
     if (this.defaultTargetId !== undefined) return this.defaultTargetId
-    // Lazy default resolution below (async in origin; cached here).
-    return this.defaultTargetCache ?? (this.pendingDefault ?? this.lastTargetUsed)
+    // Lazy async resolution: /json/list decides (devtools:// and about:blank
+    // pages lose to a real page).
+    const targets = await this.bridge.listTargets()
+    this.defaultTargetId = pickDefaultTarget(targets)
+    return this.defaultTargetId ?? this.lastTargetUsed
   }
-
-  private defaultTargetCache: string | undefined
-  private pendingDefault: string | undefined
 
   /** Acquire the session for the call's target (or the default). */
   private async sessionFor(args: Record<string, unknown>, options: { wantPage: boolean }): Promise<TargetSession> {
@@ -466,10 +591,11 @@ function notConnected(): ToolError {
   }
 }
 
-/** Detect messages that mean the CDP socket died. */
+/** Detect messages that mean the CDP socket died (or its flat session did). */
 function isSocketDeath(message: string): boolean {
   return message.includes('WebSocket')
     || message.includes('socket')
+    || message.includes('Session with given id not found')
     || message.includes('Session not found')
     || message.includes('Target closed')
 }
@@ -571,11 +697,97 @@ function readAttribute(attributes: readonly string[], name: string): string | nu
   return null
 }
 
-/** Dispatch a trusted mouse click at a viewport point. */
+/** Dispatch a trusted mouse click at a viewport point (unbounded). */
 async function dispatchMouse(session: TargetSession, point: { x: number; y: number }): Promise<void> {
   const params = { x: point.x, y: point.y, button: 'none', clickCount: 1 }
   await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...params, button: 'left' })
   await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...params, button: 'left' })
+}
+
+/**
+ * Dispatch a trusted mouse click under a hard time budget.
+ *
+ * The press/release pair rides the page's event loop: a Debugger breakpoint
+ * parked inside a synchronous mouse handler suspends that loop and the CDP
+ * reply never arrives (the 2026-09 hang). Bounding the wait turns that freeze
+ * into a structured error with the recovery path, instead of a tool call that
+ * hangs until the harness aborts it.
+ */
+async function dispatchMouseBounded(
+  session: TargetSession,
+  point: { x: number; y: number },
+  signal?: AbortSignal,
+  budgetMs: number = WAIT_BUDGETS.input,
+): Promise<void> {
+  const params = { x: point.x, y: point.y, button: 'none', clickCount: 1 }
+  await waitBounded(
+    () => session.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...params, button: 'left' }),
+    budgetMs,
+    signal,
+    'mouse press',
+  )
+  await waitBounded(
+    () => session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...params, button: 'left' }),
+    budgetMs,
+    signal,
+    'mouse release',
+  )
+}
+
+/**
+ * Run one CDP send under a hard time budget, mapping a budget expiry onto a
+ * descriptive error (and honoring the caller's abort signal, which wins even
+ * if the send later settles). The underlying promise is NOT abortable at the
+ * protocol layer — this only stops *waiting* on it, which is exactly the
+ * deadlock the interaction tools must escape.
+ */
+async function waitBounded<T>(
+  send: (signal: AbortSignal | undefined) => Promise<T>,
+  budgetMs: number,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<T> {
+  if (signal?.aborted) throw new AbortedError(what)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
+  const budget = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { reject(new TimeoutError(what, budgetMs)) }, budgetMs)
+    timer.unref?.()
+    if (signal !== undefined) {
+      onAbort = () => { reject(new AbortedError(what)) }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+  })
+  try {
+    return await Promise.race([send(signal), budget])
+  } finally {
+    clearTimeout(timer)
+    if (signal !== undefined && onAbort !== undefined) signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/** Error when the per-call wait budget expired (the page stopped answering). */
+class TimeoutError extends Error {
+  constructor(what: string, budgetMs: number) {
+    super(
+      `${what} did not complete within ${budgetMs}ms — the page's main loop is likely suspended `
+      + '(breakpoint pause). Run chrome_debug resume, then retry.',
+    )
+    this.name = 'ChromeCdpTimeout'
+  }
+}
+
+/** Error when the harness cancelled the tool call while waiting. */
+class AbortedError extends Error {
+  constructor(what: string) {
+    super(`${what} aborted: the tool call was cancelled while waiting for Chrome`)
+    this.name = 'ChromeCdpAborted'
+  }
+}
+
+/** Best-effort human message of an unknown thrown value. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 /** Type text through key events; falls back to insertText for non-ASCII. */
