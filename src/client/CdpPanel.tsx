@@ -377,33 +377,6 @@ export function CdpPanel({
   )
 }
 
-/** Overlay dot face: a persistent status pill in shell.overlay. */
-export interface CdpOverlayFace {
-  readonly hooks: {
-    readonly status: SnapshotStore<CdpStatusState>
-  }
-}
-
-export type CdpOverlayProps =
-  & PropsRuntime<'shell.overlay'>
-  & InjectFace<CdpOverlayFace>
-  & PropsLocale<'chrome-cdp'>
-
-/** Persistent bottom-right status pill (click toggles nothing; display only). */
-export function CdpOverlay({ useStatus, t }: CdpOverlayProps) {
-  const state = useStatus(snapshot => snapshot)
-  const dot = dotStateOf(state.status, state.rpcError)
-  const label = state.rpcError !== undefined
-    ? t('status.error')
-    : t(statusKeyOf(state.status))
-  return (
-    <span className={css.overlay} data-cdp-overlay aria-label={t('overlay.label')}>
-      <StateDot state={dot} />
-      <span className={css.overlayLabel}>{label}</span>
-    </span>
-  )
-}
-
 /** Small helper re-exported for tests. */
 export function cdpStatusChipLabel(status: CdpStatus | undefined, rpcError: string | undefined): ReactNode {
   return rpcError !== undefined ? 'error' : (status?.phase ?? 'unknown')

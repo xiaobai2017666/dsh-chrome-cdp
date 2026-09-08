@@ -53,7 +53,6 @@ export const CDP_LOCALES = {
     'action.reconnecting': 'Reconnecting…',
     'action.busy': 'Working…',
     'action.error': 'Action failed: {message}',
-    'overlay.label': 'Chrome CDP connection',
   },
   zh: {
     'panel.title': 'Chrome CDP',
@@ -102,7 +101,6 @@ export const CDP_LOCALES = {
     'action.reconnecting': '重连中…',
     'action.busy': '处理中…',
     'action.error': '操作失败: {message}',
-    'overlay.label': 'Chrome CDP 连接',
   },
 } as const
 

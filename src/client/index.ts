@@ -1,9 +1,8 @@
 /**
  * Chrome CDP panel — browser entry.
  *
- * One polled status store backs two surfaces: the sidebar footer panel
- * (trigger + popover with status, params form, targets, actions) and the
- * persistent shell.overlay status pill. Faces are exposed through slot
+ * One polled status store backs the sidebar footer panel (trigger + popover
+ * with status, params form, targets, actions). Faces are exposed through slot
  * registrations; the components never touch the client context directly.
  *
  * @module dsh-chrome-cdp/client
@@ -19,8 +18,8 @@ import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import { CdpOverlay, CdpPanel } from './CdpPanel.tsx'
-import type { CdpOverlayFace, CdpPanelFace } from './CdpPanel.tsx'
+import { CdpPanel } from './CdpPanel.tsx'
+import type { CdpPanelFace } from './CdpPanel.tsx'
 import { CDP_LOCALES } from './locales.ts'
 import { createCdpStatusStore, runtimeOf } from './stores.ts'
 import type { CdpEnsureResult, CdpParams } from '../types.ts'
@@ -72,7 +71,7 @@ export function apply(ctx: ClientContext): void {
     return { ok: true }
   }
 
-  const face: CdpPanelFace & CdpOverlayFace = {
+  const face: CdpPanelFace = {
     hooks: { status: store },
     onConnect: async () => {
       const outcome = await runAction('connect')
@@ -121,12 +120,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (): CdpPanelFace => face,
   }, CdpPanel))
-
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'chrome-cdp-overlay',
-    order: 90,
-    locale: NS,
-    inject: (): CdpOverlayFace => ({ hooks: { status: store } }),
-  }, CdpOverlay))
 }

@@ -42,7 +42,7 @@ const INITIAL_STATUS_STATE: CdpStatusState = {
 }
 
 /**
- * The polled status store backing both the sidebar panel and the overlay dot.
+ * The polled status store backing the sidebar panel.
  * @param runtime - RPC caller plus reset signal.
  * @returns the snapshot store and its `refresh` action.
  */

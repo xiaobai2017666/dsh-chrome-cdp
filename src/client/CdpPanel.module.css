@@ -1,4 +1,4 @@
-/* Chrome CDP panel: sidebar footer trigger + fixed popover, overlay pill. */
+/* Chrome CDP panel: sidebar footer trigger + fixed popover. */
 
 .layer {
   position: relative;
@@ -402,23 +402,4 @@
 .primary:hover:not(:disabled),
 .secondary:hover:not(:disabled) {
   filter: brightness(1.1);
-}
-
-/* Persistent overlay pill (shell.overlay, bottom-right). */
-.overlay {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-3);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.overlayLabel {
-  white-space: nowrap;
 }
