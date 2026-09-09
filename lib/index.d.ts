@@ -195,7 +195,11 @@ declare module '@deepseek-ai/cordis' {
 declare const CHROME_CDP_SETTINGS_NAMESPACE = "chrome-cdp";
 /** Connection params schema, used both as plugin Config and settings section. */
 declare const CdpParamsSchema: z<CdpParams>;
-/** Host services this plugin requires (the RPC channel registry). */
+/** Host services this plugin requires: the RPC channel registry and the web
+ * server. The `/cdp` channel registers its route through `connection.rpc`,
+ * which reads `webServer` from THIS plugin's context, so both must be
+ * declared here — omitting `webServer` fails the entry with `cannot get
+ * property "webServer" without inject`. */
 declare const inject: string[];
 /** Plugin entry: starts the service and its RPC/settings faces. */
 declare function apply(ctx: Context, config: CdpParams): void;

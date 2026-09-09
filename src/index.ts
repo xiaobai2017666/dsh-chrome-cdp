@@ -63,8 +63,12 @@ export const CdpParamsSchema = z.object({
 export type { CdpStatus, CdpParams } from './types.ts'
 export { ChromeCdpService }
 
-/** Host services this plugin requires (the RPC channel registry). */
-export const inject = ['connection']
+/** Host services this plugin requires: the RPC channel registry and the web
+ * server. The `/cdp` channel registers its route through `connection.rpc`,
+ * which reads `webServer` from THIS plugin's context, so both must be
+ * declared here — omitting `webServer` fails the entry with `cannot get
+ * property "webServer" without inject`. */
+export const inject = ['connection', 'webServer']
 
 /** Plugin entry: starts the service and its RPC/settings faces. */
 export function apply(ctx: Context, config: CdpParams): void {
