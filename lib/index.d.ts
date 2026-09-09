@@ -187,6 +187,11 @@ declare module '@deepseek-ai/cordis' {
     connection: {
       rpc: HostConnectionRpcHandle;
     };
+    /** Host web server (`dsh-host-webserver`); opaque to this plugin —
+     * the shim hands it to `webServer.register()` unchanged. */
+    webServer: {
+      register(route: unknown): () => Promise<void>;
+    };
     /** Attachment store; optionality is owned by the Service Definition. */
     attachments: import('@deepseek-ai/dsh-attachment').AttachmentStore;
   }
@@ -195,11 +200,11 @@ declare module '@deepseek-ai/cordis' {
 declare const CHROME_CDP_SETTINGS_NAMESPACE = "chrome-cdp";
 /** Connection params schema, used both as plugin Config and settings section. */
 declare const CdpParamsSchema: z<CdpParams>;
-/** Host services this plugin requires: the RPC channel registry and the web
- * server. The `/cdp` channel registers its route through `connection.rpc`,
- * which reads `webServer` from THIS plugin's context, so both must be
- * declared here — omitting `webServer` fails the entry with `cannot get
- * property "webServer" without inject`. */
+/** Host services this plugin requires: the RPC channel registry and the
+ * web server. Registering the `/cdp` channel routes HTTP traffic through
+ * the web server, and the fallback path in `rpc-shim.ts` serves the
+ * `webServer` read from this plugin's own context — so both services must
+ * be declared here. */
 declare const inject: string[];
 /** Plugin entry: starts the service and its RPC/settings faces. */
 declare function apply(ctx: Context, config: CdpParams): void;

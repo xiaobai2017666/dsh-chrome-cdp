@@ -26,6 +26,7 @@ import z from '@deepseek-ai/schemastery'
 import { ChromeCdpService } from './cdp-connection.ts'
 import { ensureChromeInstance } from './chrome-launcher.ts'
 import { provisionAgentPreset } from './preset-provision.ts'
+import { handleRpcChannel } from './rpc-shim.ts'
 import { registerHostBridge } from 'dsh-chrome-cdp/bridge'
 import type { HostBridge } from './tools/dispatch.ts'
 import type { CdpParams, CdpStatus } from './types.ts'
@@ -43,6 +44,9 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Generic RPC channel registry from the client-connection host plugin. */
     connection: { rpc: HostConnectionRpcHandle }
+    /** Host web server (`dsh-host-webserver`); opaque to this plugin —
+     * the shim hands it to `webServer.register()` unchanged. */
+    webServer: { register(route: unknown): () => Promise<void> }
     /** Attachment store; optionality is owned by the Service Definition. */
     attachments: import('@deepseek-ai/dsh-attachment').AttachmentStore
   }
@@ -63,11 +67,11 @@ export const CdpParamsSchema = z.object({
 export type { CdpStatus, CdpParams } from './types.ts'
 export { ChromeCdpService }
 
-/** Host services this plugin requires: the RPC channel registry and the web
- * server. The `/cdp` channel registers its route through `connection.rpc`,
- * which reads `webServer` from THIS plugin's context, so both must be
- * declared here — omitting `webServer` fails the entry with `cannot get
- * property "webServer" without inject`. */
+/** Host services this plugin requires: the RPC channel registry and the
+ * web server. Registering the `/cdp` channel routes HTTP traffic through
+ * the web server, and the fallback path in `rpc-shim.ts` serves the
+ * `webServer` read from this plugin's own context — so both services must
+ * be declared here. */
 export const inject = ['connection', 'webServer']
 
 /** Plugin entry: starts the service and its RPC/settings faces. */
@@ -112,7 +116,13 @@ export function apply(ctx: Context, config: CdpParams): void {
   // through the module singleton (same Node module registry in-process).
   registerHostBridge(createServiceBridge(service, ctx))
 
-  ctx.effect(() => ctx.connection.rpc.handle(
+  // `/cdp` RPC channel. handleRpcChannel() tries the plain
+  // `connection.rpc.handle()` path first; on harness builds whose
+  // client-connection predates the upstream `webServer` inject fix it
+  // falls back to a caller-side owner overlay so the channel still
+  // registers (see rpc-shim.ts for the full rationale).
+  ctx.effect(() => handleRpcChannel(
+    ctx,
     '/cdp',
     async (endpoint, payload) => {
       try {
