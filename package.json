@@ -1,7 +1,7 @@
 {
   "name": "dsh-chrome-cdp",
   "description": "Chrome DevTools Protocol connection panel for DeepSeek Harness — manage a chrome-remote-interface connection from the Web UI.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "main": "lib/index.js",
   "types": "./lib/index.d.ts",

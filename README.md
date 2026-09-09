@@ -103,7 +103,7 @@ touch ~/.dsh/profiles/web/cordis.patch.yml   # host 半边热重载(~6-8s)
 ```
 
 - 诊断脚本:`scripts/tools-probe.mjs`(11 工具 25 用例,含断点真实命中)、`cdp-probe.mjs`/`cdp-console.mjs`(裸 CRI 驱动)
-- 设计文档:[DESIGN.tools.md](DESIGN.tools.md)
+- 设计文档:[DESIGN.tools.md](ai_history/DESIGN.tools.md)
 
 ## License
 

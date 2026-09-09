@@ -3,6 +3,17 @@
 本项目的显著变更记录。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.2.3] — 2026-09-09
+
+### Fixed
+- **webServer 未注入的 harness 上启动即崩(`cannot get property "webServer" without inject`)**:host 树 `/cdp` RPC 通道注册在 client-connection 构建仍声明 `inject = ['credentials']`(缺 `webServer`)的 deepseek-harness 部署上时,启动阶段直接抛 `cannot get property "webServer" without inject`,插件树加载失败,`dsh web` 整体起不来。根因在 harness 侧:rpc-host 的 `get rpc()` 以连接服务**自身**的 ctx 读 `owner.webServer`,而 cordis 禁止跨 fiber 解析兄弟服务,调用方(本插件)无论注入什么声明都无法修复。在"只改插件、不动 dsh 本体"的约束下,新增调用点垫片 `src/rpc-shim.ts` 的 `handleRpcChannel()`:
+  - **健康路径零介入**:先按原调用形态走 `ctx.connection.rpc.handle(...)`;harness 已修复(`inject` 含 `webServer`)时垫片完全透明,注册/注销语义不变。
+  - **精确降级**:仅当捕获的错误消息恰为 `cannot get property "webServer" without inject` 或 `cannot get required service "webServer" in inactive context` 时(harness 的 `enhanceError` 只重写堆栈不改写 message,精确匹配安全),绕过 getter 直接调用运行时公开的原型方法 `connection.register(owner, channel, handler)`,并以在插件自身 ctx 上叠加 `webServer` 的 Proxy 作为 `owner`——插件自身已注入 `webServer`,该读取必成功;其余属性读取全部委托插件真实 ctx,`owner.effect(...)` 等生命周期语义与健康路径一致。
+  - **错误不吞不掩**:其余任何错误原样抛出;两条路径都不可用时抛出带 `dsh-chrome-cdp` 前缀的诊断错误。`peelOriginal` 以 `Reflect.has` 探测 `Symbol.for('cordis.original')` 再剥离 traceable 代理,避免经代理读属性触发同样的 inject 错误。
+  - 依赖说明:降级路径依赖 `register()` 在运行时可见(TS 里是 private,JS 运行时是公开原型方法);未来 harness 若移除该方法,会得到明确的诊断错误而非静默故障。
+  - 验证:对**未修复**的 harness,node v22.23.2 与 v24.19.0 均启动成功;健康 harness 上行为不变。新增 7 个垫片专项测试(`tests/rpc-shim.test.ts`,全套 47 例,`pnpm test`)。
+  - 部署:GitHub 安装的用户重新执行 `dsh plugin add github:xiaobai2017666/dsh-chrome-cdp`(或重启实例触发 pnpm 拉平)即可获得修复。
+
 ## [0.2.2] — 2026-09-02
 
 ### Fixed
