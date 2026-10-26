@@ -2,14 +2,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { handleRpcChannel } from '../src/rpc-shim.ts'
-import type { RpcHandlerLike, RpcOptions } from '../src/rpc-shim.ts'
+import type { RpcHandlerLike } from '../src/rpc-shim.ts'
 
 /** Build an error matching cordis' exact diagnostic text. */
 function injectError(): Error {
   return new Error('cannot get property "webServer" without inject')
 }
 
-const OPTIONS: RpcOptions = { authority: 'trusted-host' }
 const CHANNEL = '/cdp'
 const noopHandler: RpcHandlerLike = async () => ({ ok: true, value: undefined })
 const asyncNoop = () => Promise.resolve()
@@ -21,17 +20,17 @@ describe('handleRpcChannel — healthy path', () => {
     const ctx = {
       connection: {
         rpc: {
-          handle: (channel: string, handler: unknown, options: unknown) => {
-            calls.push(`handle:${channel}:${typeof handler}:${JSON.stringify(options)}`)
+          handle: (channel: string, handler: unknown) => {
+            calls.push(`handle:${channel}:${typeof handler}`)
             return disposer
           },
         },
       },
       webServer: { register: () => asyncNoop },
     }
-    const result = handleRpcChannel(ctx, CHANNEL, noopHandler, OPTIONS)
+    const result = handleRpcChannel(ctx, CHANNEL, noopHandler)
     assert.equal(result, disposer)
-    assert.deepEqual(calls, [`handle:/cdp:function:${JSON.stringify(OPTIONS)}`])
+    assert.deepEqual(calls, ['handle:/cdp:function'])
   })
 
   it('does not fall back when a non-inject error is thrown', () => {
@@ -45,7 +44,7 @@ describe('handleRpcChannel — healthy path', () => {
       },
       webServer: { register: () => asyncNoop },
     }
-    assert.throws(() => handleRpcChannel(ctx, CHANNEL, noopHandler, OPTIONS), /some other failure/)
+    assert.throws(() => handleRpcChannel(ctx, CHANNEL, noopHandler), /some other failure/)
   })
 
   it('propagates inject errors when the fallback is impossible', () => {
@@ -58,7 +57,7 @@ describe('handleRpcChannel — healthy path', () => {
       },
     }
     assert.throws(
-      () => handleRpcChannel({ ...ctx, connection: throwing }, CHANNEL, noopHandler, OPTIONS),
+      () => handleRpcChannel({ ...ctx, connection: throwing }, CHANNEL, noopHandler),
       /without inject/,
     )
   })
@@ -86,7 +85,7 @@ describe('handleRpcChannel — fallback path', () => {
       }),
       webServer,
     }
-    const disposer = handleRpcChannel(ctx, CHANNEL, noopHandler, OPTIONS)
+    const disposer = handleRpcChannel(ctx, CHANNEL, noopHandler)
     assert.equal(disposer, asyncNoop)
     assert.ok(captured)
     assert.equal(captured.channel, CHANNEL)
@@ -119,7 +118,7 @@ describe('handleRpcChannel — fallback path', () => {
       webServer: {},
       label: () => 'from-plugin-ctx',
     }
-    const disposer = handleRpcChannel(ctx, CHANNEL, noopHandler, OPTIONS) as () => string
+    const disposer = handleRpcChannel(ctx, CHANNEL, noopHandler) as () => string
     assert.equal(disposer(), 'from-plugin-ctx')
   })
 
@@ -147,7 +146,7 @@ describe('handleRpcChannel — fallback path', () => {
       }),
       webServer: {},
     }
-    assert.doesNotThrow(() => handleRpcChannel(ctx, CHANNEL, noopHandler, OPTIONS))
+    assert.doesNotThrow(() => handleRpcChannel(ctx, CHANNEL, noopHandler))
   })
 
   it('throws a diagnostic when neither path can register', () => {
@@ -159,6 +158,6 @@ describe('handleRpcChannel — fallback path', () => {
       },
       webServer: { register: () => asyncNoop },
     }
-    assert.throws(() => handleRpcChannel(ctx, CHANNEL, noopHandler, OPTIONS), /dsh-chrome-cdp/)
+    assert.throws(() => handleRpcChannel(ctx, CHANNEL, noopHandler), /dsh-chrome-cdp/)
   })
 })

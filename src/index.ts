@@ -4,15 +4,17 @@
  * Wires three concerns together on one fiber:
  *
  * 1. the {@link ChromeCdpService} owning the chrome-remote-interface client;
- * 2. the `/cdp` RPC channel (trusted-host authority) serving the browser
- *    panel: `status`, `targets`, `connect`, `disconnect`, `setParams`;
- * 3. a settings section (`chrome-cdp` namespace) persisting the connection
- *    parameters into the user settings document, with a commit path back
- *    into the live connection (endpoint change ⇒ reconnect).
+ * 2. the `/cdp` RPC channel serving the browser panel: `status`, `targets`,
+ *    `connect`, `disconnect`, `setParams`;
+ * 3. the volatile `Config` schema whose fields surface in the settings UI;
+ *    panel saves go through `ctx.settings.update()`, the loader commits the
+ *    validated values into the running fiber's volatile references, and the
+ *    service reads its effective parameters through those references — a
+ *    save never remounts the fiber, so a working connection survives.
  *
- * The plugin injects only `connection`; the settings wiring is optional —
- * `installSettingsSection` degrades gracefully when no settings service is
- * mounted, and the entry config keeps working as the composed base.
+ * The plugin injects `connection`, `webServer`, and `settings`: the RPC
+ * channel rides on the connection/web-server pair, and panel saves persist
+ * through the settings forms service.
  *
  * @module dsh-chrome-cdp
  */
@@ -21,7 +23,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type { Volatile } from '@deepseek-ai/cordis'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import z from '@deepseek-ai/schemastery'
 import { ChromeCdpService } from './cdp-connection.ts'
 import { ensureChromeInstance } from './chrome-launcher.ts'
@@ -31,13 +34,20 @@ import { registerHostBridge } from 'dsh-chrome-cdp/bridge'
 import type { HostBridge } from './tools/dispatch.ts'
 import type { CdpParams, CdpStatus } from './types.ts'
 
+/** Result of one `/cdp` RPC endpoint invocation, wire-ready. */
+type CdpRpcResult = { ok: true; value: unknown } | { ok: false; error: { code: string; message: string; details: object } }
+
+/** Handler shape accepted by `connection.rpc.handle()` (dsh ≥ 0.2.1-rc). */
+export type ConnectionRpcHandler = (
+  endpoint: string,
+  payload: unknown,
+  signal: AbortSignal,
+  peer: PeerScope,
+) => Promise<CdpRpcResult>
+
 /** Host Connection RPC registry, provided by `@deepseek-ai/dsh-client-connection`. */
 interface HostConnectionRpcHandle {
-  handle(
-    channel: string,
-    handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{ ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }>,
-    options: { authority: 'trusted-host' | 'loopback' },
-  ): () => Promise<void>
+  handle(channel: string, handler: ConnectionRpcHandler): () => Promise<void>
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -49,62 +59,70 @@ declare module '@deepseek-ai/cordis' {
     webServer: { register(route: unknown): () => Promise<void> }
     /** Attachment store; optionality is owned by the Service Definition. */
     attachments: import('@deepseek-ai/dsh-attachment').AttachmentStore
+    /** Schema-derived configuration forms (dsh ≥ 0.2.1-rc SettingsForms). */
+    settings: import('@deepseek-ai/dsh-settings').SettingsForms
   }
 }
 
-/** Settings namespace owned by this plugin (a plain lowercase identifier). */
+/** Settings namespace owned by this plugin (the loader entry id). */
 export const CHROME_CDP_SETTINGS_NAMESPACE = 'chrome-cdp'
 
-/** Connection params schema, used both as plugin Config and settings section. */
-export const CdpParamsSchema = z.object({
-  host: z.string().default('127.0.0.1'),
-  port: z.number().min(1).max(65535).step(1).default(9222),
-  autoReconnect: z.boolean().default(true),
-  reconnectDelaySeconds: z.number().min(1).max(600).step(1).default(5),
-}) as z<CdpParams>
+/** Connection params schema; every field is volatile (live-editable). */
+export const Config = z.object({
+  host: z.string().default('127.0.0.1').volatile(),
+  port: z.number().min(1).max(65535).step(1).default(9222).volatile(),
+  autoReconnect: z.boolean().default(true).volatile(),
+  reconnectDelaySeconds: z.number().min(1).max(600).step(1).default(5).volatile(),
+}) as z<CdpParamsConfig>
+
+/** Resolved plugin config as `apply()` receives it: volatile references. */
+export interface CdpParamsConfig {
+  /** CDP endpoint host. */
+  host: Volatile<string>
+  /** CDP endpoint port. */
+  port: Volatile<number>
+  /** Retry automatically when the socket drops. */
+  autoReconnect: Volatile<boolean>
+  /** Seconds between reconnect attempts. */
+  reconnectDelaySeconds: Volatile<number>
+}
+
+/** Back-compat alias for external consumers of the old name. */
+export const CdpParamsSchema = Config
 
 /** Live status vocabulary for the panel. */
 export type { CdpStatus, CdpParams } from './types.ts'
-export { ChromeCdpService }
-
-/** Host services this plugin requires: the RPC channel registry and the
- * web server. Registering the `/cdp` channel routes HTTP traffic through
- * the web server, and the fallback path in `rpc-shim.ts` serves the
- * `webServer` read from this plugin's own context — so both services must
- * be declared here. */
-export const inject = ['connection', 'webServer']
+/** Host services this plugin requires: the RPC channel registry, the web
+ * server, and the settings forms. Registering the `/cdp` channel routes
+ * HTTP traffic through the web server; the fallback path in `rpc-shim.ts`
+ * serves the `webServer` read from this plugin's own context; panel saves
+ * go through `settings.update()`. `settings` rides on the same profile
+ * availability as the web half (both are disabled outside a profile), so
+ * requiring it here cannot strand a headless boot. */
+export const inject = ['connection', 'webServer', 'settings']
 
 /** Plugin entry: starts the service and its RPC/settings faces. */
-export function apply(ctx: Context, config: CdpParams): void {
-  const service = new ChromeCdpService(ctx, config)
-  /** The settings provider while one is mounted (undefined otherwise). */
-  const providerRef: { current: SettingsProvider | undefined } = { current: undefined }
+export function apply(ctx: Context, config: CdpParamsConfig): void {
+  // The volatile references stay stable for the fiber's lifetime and the
+  // loader commits settings-save values into them in place (no remount, no
+  // dropped socket); the service therefore reads its effective parameters
+  // through these references, so an adopted value is visible to reconnects.
+  const readParams = (): CdpParams => ({
+    host: config.host.get(),
+    port: config.port.get(),
+    autoReconnect: config.autoReconnect.get(),
+    reconnectDelaySeconds: config.reconnectDelaySeconds.get(),
+  })
+  const service = new ChromeCdpService(ctx, readParams)
 
   // Agent-preset provisioning: keep `~/.dsh/.agent-presets/chrome-cdp-tools`
   // current with this install (first boot copies it, later boots re-pin the
   // tools row; user-authored presets are left alone). Never fails the boot.
   provisionAgentPreset(ctx, thisPluginVersion())
 
-  // Settings wiring is optional: while a settings service is mounted, the
-  // user document's `chrome-cdp` section resolves over the composition base
-  // and adopts into the live service without an immediate reconnect — a
-  // settings save never tears down a working connection. Losing the settings
-  // service falls back to the composed entry config (the provider contract's
-  // `installSection` owns that attach/detach lifecycle).
-  ctx.inject(['settings'], (sctx) => {
-    providerRef.current = sctx.settings
-    sctx.settings.installSection(ctx, CHROME_CDP_SETTINGS_NAMESPACE, CdpParamsSchema, config, {
-      setSource: (current) => { service.setParams(current()) },
-      onChange: () => { /* covered by setSource: params already adopted */ },
-    })
-    return () => { providerRef.current = undefined }
-  })
-
-  /** Persist params into the user settings document. */
+  /** Persist params into the user settings document (profile patch). */
   const persistParams = async (params: CdpParams): Promise<void> => {
-    const provider = providerRef.current
-    if (provider === undefined) throw new Error('settings service not available')
-    await provider.update(CHROME_CDP_SETTINGS_NAMESPACE, {
+    await ctx.settings.update(CHROME_CDP_SETTINGS_NAMESPACE, {
       host: params.host,
       port: params.port,
       autoReconnect: params.autoReconnect,
@@ -137,7 +155,6 @@ export function apply(ctx: Context, config: CdpParams): void {
         return { ok: true as const, value: { error: messageOf(error) } }
       }
     },
-    { authority: 'trusted-host' },
   ), 'chrome-cdp: /cdp rpc channel')
 }
 
@@ -171,7 +188,7 @@ async function dispatchCdpRpc(
   endpoint: string,
   payload: unknown,
   persistParams: (params: CdpParams) => Promise<void>,
-): Promise<{ ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }> {
+): Promise<CdpRpcResult> {
   switch (endpoint) {
     case 'status':
       return { ok: true, value: service.getSnapshot() }
@@ -196,8 +213,14 @@ async function dispatchCdpRpc(
     case 'disconnect':
       service.disconnect('user')
       return { ok: true, value: service.getSnapshot() }
-    case 'setParams':
-      return { ok: true, value: await service.setParamsAndPersist(readParamsPayload(payload), persistParams) }
+    case 'setParams': {
+      // Adopt locally first (the panel hears "applied"), then persist. The
+      // settings write re-parses the profile patch and the loader commits
+      // the validated values into the volatile refs — the refs then agree
+      // with the adopted values, so a later `readParams()` matches.
+      const accepted = await service.setParamsAndPersist(readParamsPayload(payload), persistParams)
+      return { ok: true, value: accepted }
+    }
     default:
       // The client's response-envelope schema whitelists error codes; a
       // custom code here would fail its zod union and surface as an

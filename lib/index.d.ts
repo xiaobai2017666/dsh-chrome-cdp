@@ -1,5 +1,6 @@
 import z from "@deepseek-ai/schemastery";
-import { Context, Service } from "@deepseek-ai/cordis";
+import { Context, Volatile } from "@deepseek-ai/cordis";
+import { PeerScope } from "@deepseek-ai/dsh-typert-protocol";
 //#region src/types.d.ts
 /**
  * Wire vocabulary of the Chrome CDP panel, shared by both plugin halves.
@@ -65,121 +66,25 @@ interface CdpParams {
   /** Seconds between reconnect attempts; 0 disables retry. */
   reconnectDelaySeconds: number;
 }
-/** Reply of `setParams`: what the Host did with the submitted values. */
-interface CdpSetParamsResult {
-  /** Values the Host accepted and now uses. */
-  params: CdpParams;
-  /** Whether the values were persisted into the user settings document. */
-  persisted: boolean;
-  /** Why persistence was skipped, when it was (settings service absent). */
-  persistenceNote?: string;
-}
-//#endregion
-//#region src/cdp-connection.d.ts
-/** Minimal structural type for a connected CRI client. */
-interface CdpClientShape {
-  webSocketUrl?: string;
-  send(method: string, params?: unknown, sessionId?: string): Promise<unknown>;
-  on(event: string, listener: (params: never, sessionId?: string) => void, sessionId?: string): unknown;
-  off(event: string, listener: (params: never, sessionId?: string) => void): unknown;
-  close(callback?: () => void): unknown;
-  on(event: 'disconnect', listener: () => void): unknown;
-}
-/**
- * The `chromeCdp` service: one managed CDP connection plus its RPC face.
- */
-declare class ChromeCdpService extends Service {
-  /** The RPC channel service is required; settings wiring stays optional. */
-  static inject: string[];
-  private params;
-  private client;
-  private status;
-  private connectInFlight;
-  private reconnectTimer;
-  private readonly listeners;
-  private closed;
-  constructor(ctx: Context, entryConfig?: Partial<CdpParams>);
-  /** @returns the current JSON-safe status snapshot. */
-  getSnapshot(): CdpStatus;
-  /** Observe status replacements. @returns the unsubscriber. */
-  subscribe(listener: () => void): () => void;
-  /** @returns the connection parameters currently in force. */
-  currentParams(): CdpParams;
-  /**
-   * The live CRI client for tools dispatch, when connected.
-   * Exposed raw: the tools layer owns its own session/event bookkeeping.
-   */
-  rawClient(): CdpClientShape | undefined;
-  /**
-   * Adopt new parameters (from the settings section or the panel).
-   *
-   * Saving is local: the live connection is never torn down here — the panel
-   * saves the form and connects explicitly, so a save cannot interrupt a
-   * working connection. Endpoint params are adopted for the *next* attempt;
-   * behavior params (auto-reconnect) apply to the running cycle immediately.
-   *
-   * @param next - fields to replace; omitted fields keep their value.
-   * @returns the accepted params.
-   */
-  setParams(next: Partial<CdpParams>): CdpParams;
-  /**
-   * Save-only variant used by the panel's RPC `setParams` endpoint: adopt the
-   * values, then persist them into the user settings document when a settings
-   * service is mounted. Asynchronous by nature (the document write is awaited)
-   * and never reconnects — connecting stays an explicit button.
-   *
-   * @param next - fields to replace; omitted fields keep their value.
-   * @param persist - called to store the resolved params; skipped when absent.
-   * @returns accepted params plus whether persistence ran.
-   */
-  setParamsAndPersist(next: Partial<CdpParams>, persist?: (params: CdpParams) => Promise<void>): Promise<CdpSetParamsResult>;
-  /**
-   * Open (or replace) the CDP connection.
-   * @returns whether the connection is up when the attempt settles.
-   */
-  connect(): Promise<boolean>;
-  /**
-   * Close the connection (or cancel a pending attempt) on purpose.
-   * @param reason - who asked for the close.
-   */
-  disconnect(reason?: CdpDisconnectReason): void;
-  /** @returns attachable targets as the endpoint currently reports them. */
-  targets(): Promise<readonly CdpTargetInfo[]>;
-  /** Refresh and publish the target list; a dead endpoint reports empty. */
-  private refreshTargets;
-  /** One connect attempt; never throws — failures publish as `error`. */
-  private attempt;
-  /** Start managing a freshly connected client. */
-  private adopt;
-  /** Read `/json/version` and publish the browser product string. */
-  private readBrowserVersion;
-  /** Socket-level drop: flip to error and maybe retry. */
-  private onSocketClosed;
-  /** Queue the next automatic attempt when retries are enabled. */
-  private scheduleReconnect;
-  /** Drop any queued automatic attempt. */
-  private cancelReconnect;
-  /** Final teardown used by plugin unload. */
-  shutdown(reason: CdpDisconnectReason): void;
-  /** Merge a patch into the published status and notify observers. */
-  private publish;
-}
 //#endregion
 //#region src/index.d.ts
+/** Result of one `/cdp` RPC endpoint invocation, wire-ready. */
+type CdpRpcResult = {
+  ok: true;
+  value: unknown;
+} | {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    details: object;
+  };
+};
+/** Handler shape accepted by `connection.rpc.handle()` (dsh ≥ 0.2.1-rc). */
+type ConnectionRpcHandler = (endpoint: string, payload: unknown, signal: AbortSignal, peer: PeerScope) => Promise<CdpRpcResult>;
 /** Host Connection RPC registry, provided by `@deepseek-ai/dsh-client-connection`. */
 interface HostConnectionRpcHandle {
-  handle(channel: string, handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{
-    ok: true;
-    value: unknown;
-  } | {
-    ok: false;
-    error: {
-      code: string;
-      message: string;
-    };
-  }>, options: {
-    authority: 'trusted-host' | 'loopback';
-  }): () => Promise<void>;
+  handle(channel: string, handler: ConnectionRpcHandler): () => Promise<void>;
 }
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -194,20 +99,37 @@ declare module '@deepseek-ai/cordis' {
     };
     /** Attachment store; optionality is owned by the Service Definition. */
     attachments: import('@deepseek-ai/dsh-attachment').AttachmentStore;
+    /** Schema-derived configuration forms (dsh ≥ 0.2.1-rc SettingsForms). */
+    settings: import('@deepseek-ai/dsh-settings').SettingsForms;
   }
 }
-/** Settings namespace owned by this plugin (a plain lowercase identifier). */
+/** Settings namespace owned by this plugin (the loader entry id). */
 declare const CHROME_CDP_SETTINGS_NAMESPACE = "chrome-cdp";
-/** Connection params schema, used both as plugin Config and settings section. */
-declare const CdpParamsSchema: z<CdpParams>;
-/** Host services this plugin requires: the RPC channel registry and the
- * web server. Registering the `/cdp` channel routes HTTP traffic through
- * the web server, and the fallback path in `rpc-shim.ts` serves the
- * `webServer` read from this plugin's own context — so both services must
- * be declared here. */
+/** Connection params schema; every field is volatile (live-editable). */
+declare const Config: z<CdpParamsConfig>;
+/** Resolved plugin config as `apply()` receives it: volatile references. */
+interface CdpParamsConfig {
+  /** CDP endpoint host. */
+  host: Volatile<string>;
+  /** CDP endpoint port. */
+  port: Volatile<number>;
+  /** Retry automatically when the socket drops. */
+  autoReconnect: Volatile<boolean>;
+  /** Seconds between reconnect attempts. */
+  reconnectDelaySeconds: Volatile<number>;
+}
+/** Back-compat alias for external consumers of the old name. */
+declare const CdpParamsSchema: z<CdpParamsConfig>;
+/** Host services this plugin requires: the RPC channel registry, the web
+ * server, and the settings forms. Registering the `/cdp` channel routes
+ * HTTP traffic through the web server; the fallback path in `rpc-shim.ts`
+ * serves the `webServer` read from this plugin's own context; panel saves
+ * go through `settings.update()`. `settings` rides on the same profile
+ * availability as the web half (both are disabled outside a profile), so
+ * requiring it here cannot strand a headless boot. */
 declare const inject: string[];
 /** Plugin entry: starts the service and its RPC/settings faces. */
-declare function apply(ctx: Context, config: CdpParams): void;
+declare function apply(ctx: Context, config: CdpParamsConfig): void;
 //#endregion
-export { CHROME_CDP_SETTINGS_NAMESPACE, type CdpParams, CdpParamsSchema, type CdpStatus, ChromeCdpService, apply, inject };
+export { CHROME_CDP_SETTINGS_NAMESPACE, type CdpParams, CdpParamsConfig, CdpParamsSchema, type CdpStatus, Config, ConnectionRpcHandler, apply, inject };
 //# sourceMappingURL=index.d.ts.map

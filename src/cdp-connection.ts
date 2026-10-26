@@ -89,7 +89,10 @@ export class ChromeCdpService extends Service {
   /** The RPC channel service is required; settings wiring stays optional. */
   static inject = ['connection']
 
-  private params: CdpParams
+  /** Read the configured parameters (lazily, from the volatile Config refs). */
+  private readonly readConfig: () => CdpParams
+  /** Fields adopted locally whose durable save has not confirmed (degraded mode only). */
+  private localOverride: Partial<CdpParams> = {}
   private client: CdpClientShape | undefined
   private status: CdpStatus
   private connectInFlight: Promise<boolean> | undefined
@@ -97,14 +100,18 @@ export class ChromeCdpService extends Service {
   private readonly listeners = new Set<() => void>()
   private closed = false
 
-  constructor(ctx: Context, entryConfig: Partial<CdpParams> = {}) {
+  constructor(ctx: Context, readConfig: () => CdpParams) {
     super(ctx, 'chromeCdp')
-    this.params = resolveParams(entryConfig, DEFAULT_PARAMS)
+    // Configured parameters are read lazily so a settings save (committed by
+    // the loader into the volatile Config references) is visible on the
+    // next read without a plugin remount.
+    this.readConfig = readConfig
+    const initial = this.params()
     this.status = {
       phase: 'disconnected',
-      host: this.params.host,
-      port: this.params.port,
-      autoReconnect: this.params.autoReconnect,
+      host: initial.host,
+      port: initial.port,
+      autoReconnect: initial.autoReconnect,
       error: null,
       lastDisconnect: null,
       webSocketDebuggerUrl: null,
@@ -117,6 +124,17 @@ export class ChromeCdpService extends Service {
     // Cancelling the fiber must tear the socket and pending timers down with
     // it; nothing here may outlive the plugin that owns the connection.
     ctx.effect(() => () => { this.shutdown('shutdown') }, 'chrome-cdp: connection teardown')
+  }
+
+  /**
+   * Effective parameters right now: the volatile Config references (the
+   * loader keeps them current on a settings save) overlaid with any
+   * locally adopted fields whose durable save has not confirmed. Resolved
+   * and validated on every call, so callers may hold the result across an
+   * await and still see one consistent snapshot.
+   */
+  private params(): CdpParams {
+    return resolveParams(this.localOverride, this.readConfig())
   }
 
   /** @returns the current JSON-safe status snapshot. */
@@ -132,7 +150,7 @@ export class ChromeCdpService extends Service {
 
   /** @returns the connection parameters currently in force. */
   currentParams(): CdpParams {
-    return this.params
+    return this.params()
   }
 
   /**
@@ -155,8 +173,10 @@ export class ChromeCdpService extends Service {
    * @returns the accepted params.
    */
   setParams(next: Partial<CdpParams>): CdpParams {
-    const resolved = resolveParams(next, this.params)
-    this.params = resolved
+    const resolved = resolveParams(next, this.params())
+    // Held only until the durable save confirms; from then on the volatile
+    // Config references carry the values and the overlay is empty.
+    this.localOverride = resolved
     this.publish({
       host: resolved.host,
       port: resolved.port,
@@ -186,6 +206,10 @@ export class ChromeCdpService extends Service {
     }
     try {
       await persist(params)
+      // The loader commits the saved values into the volatile refs; the
+      // local overlay is now redundant and would only shadow later
+      // settings-UI edits of other fields.
+      this.localOverride = {}
       return { params, persisted: true }
     } catch (error) {
       // The values are already live for the next attempt; only the durable
@@ -203,11 +227,13 @@ export class ChromeCdpService extends Service {
     if (this.connectInFlight !== undefined) return this.connectInFlight
     this.cancelReconnect()
     const attempt = this.status.attempts + 1
+    // One consistent snapshot for the whole attempt.
+    const params = this.params()
     this.publish({
       phase: 'connecting',
       attempts: attempt,
-      host: this.params.host,
-      port: this.params.port,
+      host: params.host,
+      port: params.port,
       error: null,
     })
     this.connectInFlight = this.attempt().then((up) => {
@@ -248,7 +274,8 @@ export class ChromeCdpService extends Service {
   /** @returns attachable targets as the endpoint currently reports them. */
   async targets(): Promise<readonly CdpTargetInfo[]> {
     try {
-      const list = await CDP_API.List({ host: this.params.host, port: this.params.port })
+      const { host, port } = this.params()
+      const list = await CDP_API.List({ host, port })
       return (list ?? [])
         .filter(entry => typeof entry.webSocketDebuggerUrl === 'string')
         .map(entry => ({
@@ -269,7 +296,8 @@ export class ChromeCdpService extends Service {
   /** One connect attempt; never throws — failures publish as `error`. */
   private async attempt(): Promise<boolean> {
     try {
-      const client = await CDP_API({ host: this.params.host, port: this.params.port })
+      const { host, port } = this.params()
+      const client = await CDP_API({ host, port })
       if (this.closed) {
         try {
           (client as CdpClientShape).close()
@@ -309,7 +337,8 @@ export class ChromeCdpService extends Service {
   /** Read `/json/version` and publish the browser product string. */
   private async readBrowserVersion(): Promise<void> {
     try {
-      const version = await CDP_API.Version({ host: this.params.host, port: this.params.port })
+      const { host, port } = this.params()
+      const version = await CDP_API.Version({ host, port })
       if (this.client !== undefined && typeof version.Browser === 'string') {
         this.publish({ browserVersion: version.Browser })
       }
@@ -334,12 +363,12 @@ export class ChromeCdpService extends Service {
 
   /** Queue the next automatic attempt when retries are enabled. */
   private scheduleReconnect(): void {
-    if (this.closed || !this.params.autoReconnect) return
+    if (this.closed || !this.params().autoReconnect) return
     if (this.reconnectTimer !== undefined || this.connectInFlight !== undefined) return
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined
       void this.connect()
-    }, this.params.reconnectDelaySeconds * 1000)
+    }, this.params().reconnectDelaySeconds * 1000)
     // Never hold the host process open just for a pending retry.
     this.reconnectTimer.unref?.()
   }

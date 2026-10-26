@@ -3,6 +3,24 @@
 本项目的显著变更记录。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.2.4] — 2026-10-26
+
+### Changed
+- **适配 DeepSeek Harness 0.2.1-rc(settings 易变配置模型)**:harness 的 settings 服务从 `SettingsProvider.installSection`(自管 section 生命周期)重构为 `SettingsForms` + **易变配置(volatile config)**模型,旧 API 在新 harness 上不存在,插件启动即失败。本次迁移:
+  - **插件导出 `Config` schema**:四个连接参数字段(host/port/autoReconnect/reconnectDelaySeconds)全部声明 `.volatile()`;cordis 加载器把解析后的配置作为 `Volatile<T>` 稳定引用传给 `apply()`,设置页只在有易变字段的插件上自动生成(旧行为:`installSection` 显式挂载)。
+  - **面板保存 → `settings.update()` → 原地生效**:面板 `setParams` RPC 经 `ctx.settings.update('chrome-cdp', patch)` 写入 profile 补丁行;加载器解析补丁后把校验值**原地提交**进运行中 fiber 的易变引用(`_commitVolatile`),服务每次都经引用读取生效参数——保存不重启插件 fiber、不断开 CDP 连接,与 0.2.3 的"保存即采用、连接保持"语义一致。已在真实 harness 上验证:保存 → 状态即时反映 → 重启后仍保持。
+  - **服务读参数改为经易变引用**(`src/cdp-connection.ts`):`ChromeCdpService` 构造函数改收 `readConfig()` 读取器,有效参数 = 易变引用叠加"已采用未持久化"的本地覆盖(仅 settings 服务缺失的降级场景存在);连接尝试开始时取一次一致性快照。
+  - **`settings` 加入 `inject`**:面板持久化路径读取 `ctx.settings`,未声明时 cordis 以 `cannot get property "settings" without inject` 拒绝读取。settings 与 web 半边同以 profile 上下文为可用前提,headless 组合不受影响。
+  - **依赖基线**:peer/dev/optional 依赖全部升至 `^0.2.1-rc.2`(settings/typert/client-*/attachment/tools;rc.2 与 rc.3 无源码差异,单一范围同时覆盖),`@deepseek-ai/cordis` 升至 `>=4.0.5`,`@deepseek-ai/schemastery` 升至 `^3.18.5`(引入 `.volatile()`)。
+- **`/cdp` RPC 对齐 0.2.1-rc 调用面**:`ConnectionRpcHandler` 新增第 4 参 `peer`(carrier 已准入的 Peer),`handle()` 去掉了早已不被读取的 `authority` 选项,失败分支的 `error.details` 变为必填 `object`(本插件全部走 ok:true 包裹 `{error}` 的响应形态,不受影响);垫片 `handleRpcChannel()` 同步移除 options 形参,健康路径调用形态与 rc 一致。
+- **rpc-shim 兼容性确认**:rc.2 的 `get rpc()`/`register(owner, channel, handler)` 原型方法与垫片降级路径的假设逐行核对一致(`const owner = this.ctx`、`Symbol.for('cordis.original')`、两条 cordis inject 诊断文案均未变),0.2.3 的垫片逻辑原样保留,仅在健康 harness 上不触发。
+
+### Removed
+- **`SettingsProvider` / `installSection` 集成路径**:随 harness 移除;`CdpParamsSchema` 保留为 `Config` 的向后兼容别名。
+
+### Verified
+- 真实 harness(dsh 0.2.1-rc.2 checkout)端到端:插件加载、`/cdp` 通道 HTTP 往返(status/targets/connect/disconnect/ensure/setParams)、`setParams` 持久化(profile 补丁行生成、易变值原地提交、状态即时更新)、重启后配置保持、连接真实 Chrome(targets 7、browserVersion 读取)。全套 47 测试通过,host/client 双 tsconfig 类型检查通过。
+
 ## [0.2.3] — 2026-09-09
 
 ### Fixed

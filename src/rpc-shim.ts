@@ -5,17 +5,18 @@
  * from a context derived from the **connection service's own** fiber
  * (`const owner = this.ctx` in `rpc-host.ts`), not from the calling
  * plugin's fiber. cordis refuses to resolve a sibling fiber's service, so
- * when the `client-connection` build's own `inject` predates the upstream
- * `['webServer', 'credentials']` fix, the first
+ * on a harness build whose `client-connection` predates the upstream
+ * `['webServer', 'credentials']` inject fix, the first
  * `connection.rpc.handle()` call fails synchronously with
  * `cannot get property "webServer" without inject` — no caller-side
  * `inject` declaration can prevent it.
  *
  * What this shim does, entirely from the plugin side:
  *
- * 1. Healthy path first — `ctx.rpc.handle(...)`, the exact call form used
- *    before the shim, so on a fixed harness registration ownership and
- *    disposal semantics are byte-for-byte unchanged.
+ * 1. Healthy path first — `ctx.rpc.handle(channel, handler)`, the exact
+ *    call form the dsh ≥ 0.2.1-rc harness expects, so on a fixed harness
+ *    registration ownership and disposal semantics are byte-for-byte
+ *    unchanged.
  * 2. Fallback, engaged only when that exact cordis diagnostic surfaces:
  *    call the same `register(owner, channel, handler)` prototype method
  *    the getter delegates to, passing `owner` = this plugin's context with
@@ -37,21 +38,25 @@ const INJECT_ERRORS = [
   'cannot get required service "webServer" in inactive context',
 ]
 
-/** Handler shape accepted by `connection.rpc.handle()`. */
+/** Wire result of one RPC endpoint invocation. */
+export type RpcHandlerResult =
+  | { ok: true; value: unknown }
+  | { ok: false; error: { code: string; message: string; details: object } }
+
+/**
+ * Handler shape accepted by `connection.rpc.handle()` (dsh ≥ 0.2.1-rc:
+ * the carrier hands the admitted Peer through as the fourth argument).
+ */
 export type RpcHandlerLike = (
   endpoint: string,
   payload: unknown,
   signal: AbortSignal,
-) => Promise<{ ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }>
-
-/** Options accepted by `connection.rpc.handle()`. */
-export interface RpcOptions {
-  authority: 'trusted-host' | 'loopback'
-}
+  peer: unknown,
+) => Promise<RpcHandlerResult>
 
 /** The `connection.rpc` registry surface used by the healthy path. */
 export interface RpcChannel {
-  handle(channel: string, handler: RpcHandlerLike, options: RpcOptions): () => Promise<void>
+  handle(channel: string, handler: RpcHandlerLike): () => Promise<void>
 }
 
 /** Minimal structural view of this plugin's context for the shim. */
@@ -77,19 +82,17 @@ interface RegisterableService {
  *   `webServer` (the overlay in the fallback path reads `webServer` here).
  * @param channel - absolute RPC channel to register, e.g. `/cdp`.
  * @param handler - endpoint handler for the channel.
- * @param options - authority options forwarded to `rpc.handle()`.
  * @returns disposer removing the channel, same contract as `rpc.handle()`.
  */
 export function handleRpcChannel(
   ctx: ShimContext,
   channel: string,
   handler: RpcHandlerLike,
-  options: RpcOptions,
 ): () => Promise<void> {
-  // Healthy path — identical to the pre-shim call form, including the
-  // registration-ownership semantics of the mixin accessor.
+  // Healthy path — identical to the dsh ≥ 0.2.1-rc call form, including
+  // the registration-ownership semantics of the mixin accessor.
   try {
-    return ctx.connection.rpc.handle(channel, handler, options)
+    return ctx.connection.rpc.handle(channel, handler)
   } catch (error) {
     if (!isInjectError(error)) throw error
   }
