@@ -3,6 +3,14 @@
 本项目的显著变更记录。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.2.5] — 2026-10-26
+
+### Fixed
+- **`dsh plugin add` 在 rc.2 运行时上启动失败(工具行被兼容门禁禁用)**:0.2.4 把 `@deepseek-ai/dsh-tools` 声明为 optional peer 依赖,`dsh plugin add` 内部的 pnpm 调用启用 `auto-install-peers`,把 `^0.2.1-rc.2` 解析到 npm 上的 **rc.3** 并装进 profile 的 node_modules;基础 bundle 的 `tools` 行按就近原则解析到这份 rc.3 拷贝,而 rc.3 的 tools 精确钉死全套 rc.3 伴侣包(agent/ptc-runtime/llm/scope/session/…),在 rc.2 运行时上兼容门禁直接禁用 `tools` 行,`agent-loop`/`timeout-policy` 等整棵依赖树起不来(`1 required plugin did not activate`)。修复:
+  - **零依赖工具定义层**(`src/vendor/`):`defineTool` 及其闭包(schema DSL 编译器、JSON Schema 校验器、`HarnessError`、两个 util 断言)从 harness 源码 vendor 进插件,构建时打进 `lib/tools.mjs`——`@deepseek-ai/dsh-tools` 从全部依赖类中移除,profile 里不再出现第二份 dsh-tools,rc.2/rc.3 均可运行,插件注册的工具与运行时注册器**结构性**兼容(`ctx.tools.register()` 接收普通对象定义)。
+  - **产物外部导入面收缩**:`lib/tools.mjs` 现在唯一的外部导入是包自身的 bridge 单例;host 半边仍按需 external(cordis/schemastery/chrome-remote-interface),它们本就由运行时提供。
+  - 验证:无 dsh-tools 环境加载 `lib/tools.mjs` + 驱动 `apply()` → 11 个 `chrome_*` 定义全部注册,参数 JSON Schema 编译、`execute` 往返、`INVALID_ARGS` 校验、投影软失败路径逐一实测;rc.2 smoke harness 上 host 行 + preset 行同时激活。
+
 ## [0.2.4] — 2026-10-26
 
 ### Changed

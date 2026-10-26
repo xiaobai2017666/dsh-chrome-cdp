@@ -19,8 +19,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { defineTool } from '../vendor/schema.ts'
+import type { ToolDefinition } from '../vendor/types.ts'
 import { TOOL_SPECS } from './schema.ts'
 import type { ParamSpec } from './schema.ts'
 import { ToolDispatcher } from './dispatch.ts'
@@ -98,6 +98,19 @@ function ensureDispatcher(bridge: HostBridge): ToolDispatcher {
 }
 
 // ── entry ───────────────────────────────────────────────────────────────────
+
+/** The tools registry service provided by `@deepseek-ai/dsh-tools`' runtime
+ * plugin; structural subset — only what registration needs. */
+interface ToolsService {
+  register(definition: ToolDefinition): () => void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Tool registry on the preset fiber (provided by the harness tools plugin). */
+    tools: ToolsService
+  }
+}
 
 /** Tools plugin entry: register every non-gated tool on this fiber. */
 export function apply(ctx: Context, config: ToolsConfig = {}): void {
