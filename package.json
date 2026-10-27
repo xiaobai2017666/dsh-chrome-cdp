@@ -72,7 +72,10 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/chrome-cdp-tools.patch.yml"
+      ]
     },
     "client": {
       "platform": "web",
