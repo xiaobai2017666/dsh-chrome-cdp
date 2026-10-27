@@ -226,10 +226,13 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
-      config:
-        provider: spawn
+    # Workflow engine rows (`ptc-runtime`, `workflow-ptc`) are HOST-plane in
+    # dsh ≥ 0.2.1-rc: the base bundle mounts the PTC runtime and the workflow
+    # registry, and `dsh-tool-workflow`/`dsh-tool-ralph` below consume them.
+    # (dsh ≤ 0.1.x carried `workflow-worker-thread` here instead; that package
+    # no longer exists.) Discovery resolves bare preset rows against the
+    # profile install, where harness-internal packages are invisible — a host
+    # row must never be duplicated as a bare preset row.
 
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
